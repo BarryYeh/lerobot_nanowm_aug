@@ -31,7 +31,8 @@ class DiffusionConfig(PreTrainedConfig):
     Those are: `input_features` and `output_features`.
 
     Notes on the inputs and outputs:
-        - "observation.state" is required as an input key.
+        - "observation.state" is optional. When absent (image-only / env-state-only policy),
+          the global conditioning is built from the image and/or environment-state features alone.
         - Either:
             - At least one key starting with "observation.image is required as an input.
               AND/OR

@@ -92,9 +92,10 @@ class DiffusionPolicy(PreTrainedPolicy):
     def reset(self):
         """Clear observation and action queues. Should be called on `env.reset()`"""
         self._queues = {
-            OBS_STATE: deque(maxlen=self.config.n_obs_steps),
             ACTION: deque(maxlen=self.config.n_action_steps),
         }
+        if self.config.robot_state_feature:
+            self._queues[OBS_STATE] = deque(maxlen=self.config.n_obs_steps)
         if self.config.image_features:
             self._queues[OBS_IMAGES] = deque(maxlen=self.config.n_obs_steps)
         if self.config.env_state_feature:
@@ -194,7 +195,11 @@ class DiffusionModel(nn.Module):
         self.config = config
 
         # Build observation encoders (depending on which observations are provided).
-        global_cond_dim = self.config.robot_state_feature.shape[0]
+        # `observation.state` is optional: an image-only (or env-state-only) policy has
+        # `robot_state_feature is None`, so the state term contributes 0 to global_cond.
+        global_cond_dim = (
+            self.config.robot_state_feature.shape[0] if self.config.robot_state_feature else 0
+        )
         if self.config.image_features:
             num_images = len(self.config.image_features)
             if self.config.use_separate_rgb_encoder_per_camera:
@@ -267,10 +272,20 @@ class DiffusionModel(nn.Module):
 
         return sample
 
+    def _batch_bs_nobs(self, batch: dict[str, Tensor]) -> tuple[int, int]:
+        """(batch_size, n_obs_steps) read from whichever observation key is present."""
+        if self.config.robot_state_feature:
+            ref = batch[OBS_STATE]
+        elif self.config.image_features:
+            ref = batch[OBS_IMAGES]
+        else:
+            ref = batch[OBS_ENV_STATE]
+        return ref.shape[0], ref.shape[1]
+
     def _prepare_global_conditioning(self, batch: dict[str, Tensor]) -> Tensor:
         """Encode image features and concatenate them all together along with the state vector."""
-        batch_size, n_obs_steps = batch[OBS_STATE].shape[:2]
-        global_cond_feats = [batch[OBS_STATE]]
+        batch_size, n_obs_steps = self._batch_bs_nobs(batch)
+        global_cond_feats = [batch[OBS_STATE]] if self.config.robot_state_feature else []
         # Extract image features.
         if self.config.image_features:
             if self.config.use_separate_rgb_encoder_per_camera:
@@ -315,8 +330,9 @@ class DiffusionModel(nn.Module):
                 AND/OR
             "observation.environment_state": (B, n_obs_steps, environment_dim)
         }
+        ("observation.state" is optional when the policy is image-only.)
         """
-        batch_size, n_obs_steps = batch[OBS_STATE].shape[:2]
+        batch_size, n_obs_steps = self._batch_bs_nobs(batch)
         assert n_obs_steps == self.config.n_obs_steps
 
         # Encode image features and concatenate them all together along with the state vector.
@@ -347,9 +363,12 @@ class DiffusionModel(nn.Module):
         }
         """
         # Input validation.
-        assert set(batch).issuperset({OBS_STATE, ACTION, "action_is_pad"})
+        required = {ACTION, "action_is_pad"}
+        if self.config.robot_state_feature:
+            required.add(OBS_STATE)
+        assert set(batch).issuperset(required)
         assert OBS_IMAGES in batch or OBS_ENV_STATE in batch
-        n_obs_steps = batch[OBS_STATE].shape[1]
+        n_obs_steps = self._batch_bs_nobs(batch)[1]
         horizon = batch[ACTION].shape[1]
         assert horizon == self.config.horizon
         assert n_obs_steps == self.config.n_obs_steps
