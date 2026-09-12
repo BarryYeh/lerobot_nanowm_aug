@@ -4,7 +4,8 @@
 # (Untrimmed 7,894 / Trimmed 1,501 / Verified 464). Holding all three at the common maximum
 # isolates LABEL QUALITY from DOSE, which was the confound in the earlier 161-vs-503 result.
 set -euo pipefail
-cd /home/barryyeh/repos/lerobot
+# repo root -- derived from this script's own location (examples/nanowm_pusht_aug/eval/)
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 P=examples/nanowm_pusht_aug
 N=464

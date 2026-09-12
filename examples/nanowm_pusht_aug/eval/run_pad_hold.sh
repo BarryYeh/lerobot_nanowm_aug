@@ -15,7 +15,8 @@
 # drop=9 (not the baseline's 8) is required by ep_len=10, so CONTROL IS RETRAINED AT drop=9 too --
 # otherwise the arms would differ in how the real data is sampled, not just in the imagined data.
 set -euo pipefail
-cd /home/barryyeh/repos/lerobot
+# repo root -- derived from this script's own location (examples/nanowm_pusht_aug/eval/)
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 P=examples/nanowm_pusht_aug
 
