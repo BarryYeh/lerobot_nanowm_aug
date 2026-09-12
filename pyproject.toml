@@ -415,6 +415,12 @@ ignore = [
 # E402: conditional-import guards (TYPE_CHECKING / is_package_available) must precede the imports they protect
 "src/lerobot/scripts/convert_dataset_v21_to_v30.py" = ["E402"]
 
+# N806: this example mirrors the NanoWM / diffusion-policy papers, where single capital letters are the
+# established notation for shapes and gains (H history, G rollout, Cz/Sz latent channels/size, KP/KV PD
+# gains, M image moments). Renaming them to snake_case would make the code harder to check against the
+# sources it cites, not easier.
+"examples/nanowm_pusht_aug/**" = ["N806"]
+
 # D (pydocstyle) is enabled globally, but only holds for code that has been converted to the docstring
 # standard in docs/source/writing_docstrings.mdx. Every module below is still on the old style; each entry
 # is deleted as that module is converted, and this block can be removed once it is empty.
@@ -499,6 +505,7 @@ default.extend-ignore-identifiers-re = [
     "OT_VALUE",
     "VanderBilt",
     "seperated_timestep",
+    "DFoT",  # Diffusion Forcing Transformer (NanoWM sampler)
 ]
 
 # Docstring coverage gate. `fail-under` is a RATCHET, not a target: it is set just below the currently
