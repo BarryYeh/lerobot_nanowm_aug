@@ -39,8 +39,8 @@ echo '=== AGGREGATE464 DONE ==='
 
 for arm in untrimmed trimmed verified; do
   rm -rf outputs/train/cl_aug/${arm}464_d8_s1000
-  bash $P/eval/finetune_cl.sh $arm 1000 20000
-  bash $P/eval/proto_eval_pusht.sh outputs/train/cl_aug/${arm}464_d8_s1000/checkpoints/last/pretrained_model \
+  bash $P/scripts/finetune_cl.sh $arm 1000 20000 8   # ep-len 9 recipe -> drop 8
+  bash $P/scripts/proto_eval_pusht.sh outputs/train/cl_aug/${arm}464_d8_s1000/checkpoints/last/pretrained_model \
     outputs/eval/cl_aug/${arm}464 200 100000
   echo "=== ${arm}464 DONE ==="
 done

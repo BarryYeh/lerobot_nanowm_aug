@@ -1,7 +1,7 @@
 # `datagen/` — reusable helpers for the NanoWM PushT augmentation prototype
 
 Named `datagen`, **not `utils`**: `utils` collides with nano-world-model's own top-level
-`src/utils` package (imported by `rollout_imagine`) and with the repo-root `utils/`
+`src/utils` package (imported by `imagined_rollout`) and with the repo-root `utils/`
 doc-check scripts. A `utils/` package here would shadow nano-world-model's and break the
 NanoWM worker.
 
@@ -40,11 +40,11 @@ uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.p
 | `pusht-noise`        | `convert_pusht_noise.py`        | `pusht_noise/{train,val}` archive → `local/pusht_noise_224_fi<N>[_imgonly]`                 |
 | `pusht-imgonly`      | `convert_pusht_imgonly.py`      | `lerobot/pusht` → `local/pusht_imgonly` (drop `observation.state`)                          |
 | `pushtnoise-denoise` | `convert_pushtnoise_denoise.py` | `pusht_noise` train → `local/pushtnoise_clean185_imgonly` (185 min-residual denoised demos) |
-| `imagined`           | `pack_imagined.py`              | `rollout_imagine.py` `.npz` shards → `local/pusht_noise_224_imgonly_nanoWM_fi5`             |
+| `imagined`           | `pack_imagined.py`              | `imagined_rollout.py` `.npz` shards → `local/pusht_noise_224_imgonly_nanoWM_fi5`             |
 
 Each converter module also runs standalone (`python datagen/convert_pusht_imgonly.py …`).
 
 `pack_closed_loop.py` is deliberately **not** in that registry: it packs accepted
-closed-loop rollouts with a different episode layout (one 16-frame episode per
-imagined-frame/action-chunk pair, trained with `drop_n_last_frames=15`) and has its own
+closed-loop rollouts with a different episode layout (one 10-frame episode per
+imagined-frame/action-chunk pair, trained with `drop_n_last_frames=9`) and has its own
 CLI. See its module docstring for why the layout differs.

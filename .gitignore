@@ -176,3 +176,6 @@ outputs/
 *.urdf
 *.xml
 *.part
+
+# third-party research repos read for reference (SAILOR, CUPID)
+codes/

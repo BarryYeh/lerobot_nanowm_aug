@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Pack NanoWM imagined-rollout .npz (from rollout_imagine.py) into a LeRobotDataset.
+"""Pack NanoWM imagined-rollout .npz (from imagined_rollout.py) into a LeRobotDataset.
 
 Stage 2 of 2 (lerobot venv). Output schema matches the pusht_noise image-only sets so
 the two mix in one dataloader. Accepts a single .npz or a directory of shard_*.npz.

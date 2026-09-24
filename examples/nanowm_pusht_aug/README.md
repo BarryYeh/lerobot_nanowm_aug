@@ -12,16 +12,16 @@ layout follows that boundary:
 
 | path                    | venv             | what                                                                                     |
 | ----------------------- | ---------------- | ---------------------------------------------------------------------------------------- |
-| `rollout_imagine.py`    | **nanowm conda** | stage 1 -- open-loop imagined rollouts -> `.npz` shards                                  |
-| `proto_cl_wm_worker.py` | **nanowm conda** | persistent NanoWM worker for the closed loop (spawned by `eval/proto_cl_aligned.py`)     |
+| `imagined_rollout.py`   | **nanowm conda** | both NanoWM generation modes, sharing one `load_nanowm`: `closed-loop` (the persistent worker, spawned by `eval/closed_loop_rollout.py`) and `open-loop` (stage 1 -> `.npz` shards) |
 | `datagen/`              | **lerobot uv**   | stage 2 -- `.npz` / archives -> `LeRobotDataset` (plus the two pure-numpy modules below) |
-| `eval/`                 | **lerobot uv**   | training + eval drivers and their shell recipes                                          |
+| `eval/`                 | **lerobot uv**   | training + eval drivers (Python)                                                          |
+| `scripts/`              | **lerobot uv**   | every shell recipe, run from the repo root                                                |
 
 `datagen/action_convert.py` and `datagen/coverage_from_frame.py` are the exception: they
 are pure numpy (+ cv2) and are imported from **both** venvs, so they must never import
 `lerobot`. That is also why the package is called `datagen` and not `utils` -- `utils`
 would collide with nano-world-model's own top-level `src/utils`, a hard dependency of
-`rollout_imagine`.
+`imagined_rollout`.
 
 Prerequisites: the nanowm env at `~/miniconda3/envs/nanowm`, the nano-world-model
 checkout at `~/repos/nano-world-model` (with `ckpt/{config.yaml,model.pt}`), and the
@@ -132,6 +132,51 @@ Output feature schema:
 Coarse-frame agent motion is ~30–120 px per step (0.5 s), well within a held-target
 PD controller's reach.
 
+### `datagen/pack_closed_loop.py` -- closed-loop imagined data
+
+Packs accepted closed-loop rollouts (`eval/closed_loop_rollout.py`) as fps-10 episodes that
+aggregate with `local/pusht_imgonly`. Each (imagined frame, action chunk) pair becomes its
+own short episode, so the sampler reads exactly one fresh image per pair.
+
+**Defaults: `--ep-len 10`, `drop_n_last_frames=9`, `--pad-mode hold`.**
+
+`EpisodeAwareSampler` gives an episode of length `L` exactly `L − drop` sample starts, so one
+sample per imagined episode requires
+
+```
+ep_len = drop_n_last_frames + 1
+```
+
+`drop` is global and also trims the real dataset, so `ep_len` trades controllable label slots
+against real samples:
+
+| ep_len | drop  | slots written by packer | auto-padded (copy of last row) | real samples | vs drop=8 |
+| ------ | ----- | ----------------------- | ------------------------------ | ------------ | --------- |
+| 9      | 8     | L0–L8                   | 7 (L9–L15)                     | 24,002       | —         |
+| **10** | **9** | **L0–L9**               | **6 (L10–L15)**                | **23,796**   | **−0.9%** |
+| 16     | 15    | L0–L15                  | 0                              | 22,560       | −6.0%     |
+
+`ep_len=16` is not usable: `drop=15` strips the 1,442 highest-coverage real frames (mean
+coverage 0.608 vs 0.258 kept), which took Control from 70.0% to 59.5%.
+
+`hold` fills slots that have no genuine executed action with the agent's own position (the
+only target that makes the PD controller stop; `zero` is a target at the top-left corner and
+`copy` keeps pushing). The auto-pad of L10–L15 then copies L9, which is already the hold
+value, so all 16 slots are consistent.
+
+**`drop` must match on both arms.** `scripts/finetune_cl.sh <arm> [seed] [steps] [drop]` defaults
+to `drop=9`; Control has to be trained at the same value as the augmented arm. Datasets packed
+with `--ep-len 9` (`run_dose464.sh`, `run_dose500.sh`) pass `drop=8` explicitly.
+
+```bash
+uv run --extra training python examples/nanowm_pusht_aug/datagen/pack_closed_loop.py \
+    --accepted examples/nanowm_pusht_aug/cl/pool500 --repo-id local/pusht_cl_allpre_h10 \
+    --truncate-cov 0.95 --frame-select all --max-pairs 464 --overwrite
+# aggregate with local/pusht_imgonly (pin stats to the real set), then:
+bash examples/nanowm_pusht_aug/scripts/finetune_cl.sh allpre_h 1000 20000   # drop=9
+bash examples/nanowm_pusht_aug/scripts/finetune_cl.sh a        1000 20000   # Control, drop=9
+```
+
 ## Next steps
 
 1. **T1** — image-only diffusion policy baseline (`a`). Build the dataset then run
@@ -139,7 +184,7 @@ PD controller's reach.
    ```bash
    uv run python examples/nanowm_pusht_aug/datagen/run_converter.py pusht-noise \
        --splits train val --frame-interval 5 --drop-state --overwrite
-   bash examples/nanowm_pusht_aug/train_baseline.sh 100000
+   bash examples/nanowm_pusht_aug/scripts/train_baseline.sh 100000
    ```
 2. **T3** — policy sim-rollout in nano-world-model's `PushTEnv` (render_size 224) to
    collect context frames + visited states.

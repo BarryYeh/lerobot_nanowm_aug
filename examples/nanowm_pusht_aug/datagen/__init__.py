@@ -1,7 +1,7 @@
 """Reusable helpers for the NanoWM PushT augmentation prototype.
 
 Named ``datagen`` (not ``utils``): ``utils`` collides with nano-world-model's own
-top-level ``src/utils`` package (a hard dependency of ``rollout_imagine``) and with the
+top-level ``src/utils`` package (a hard dependency of ``imagined_rollout``) and with the
 repo-root ``utils/`` doc-check scripts -- both would shadow / be shadowed here.
 
 Two independent groups; import only what you need so the module stays usable from BOTH

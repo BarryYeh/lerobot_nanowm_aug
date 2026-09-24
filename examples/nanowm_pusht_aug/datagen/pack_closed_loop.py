@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Pack ACCEPTED closed-loop imagined rollouts into a LeRobotDataset (lerobot venv).
 
-Successor to `pack_imagined.py`, which packs open-loop `rollout_imagine.py` shards at fps 2
+Successor to `pack_imagined.py`, which packs open-loop `imagined_rollout.py` shards at fps 2
 with one action per frame. Closed-loop accepted rollouts have a different shape -- 8 imagined
 frames 0.5 s apart plus 40 executed absolute targets at 0.1 s -- and must aggregate with the
 fps-10 real dataset, so they need a different layout.
@@ -12,21 +12,25 @@ NanoWM only produces frames every `fi`(=5) sim steps, so a naive fps-10 pack wou
 zero-order-hold each imagined frame across 5 rows -- pairing a STALE image (up to 0.4 s old)
 with a fresh action chunk on 4 of every 5 samples. That is avoidable:
 
-  * emit each (imagined frame, 16-action chunk) pair as its OWN 16-frame episode
-  * train with `drop_n_last_frames=15`
+  * emit each (imagined frame, action chunk) pair as its OWN `ep_len`-frame episode
+  * train with `drop_n_last_frames = ep_len - 1`
 
-`EpisodeAwareSampler` gives each episode valid sample starts `[from, to - drop_n_last)`, so a
-16-frame episode yields EXACTLY ONE sample, at its first frame. With `n_obs_steps=1`,
-`observation_delta_indices == [0]`, so frames 1..15 are never read as observations -- only
+`EpisodeAwareSampler` gives each episode valid sample starts `[from, to - drop_n_last)`, so an
+episode of `drop+1` frames yields EXACTLY ONE sample, at its first frame. With `n_obs_steps=1`,
+`observation_delta_indices == [0]`, so the later rows are never read as observations -- only
 their `action` values are, to fill the horizon. Every emitted sample therefore pairs a FRESH
-imagined frame with the exact 16 actions that followed it. Zero staleness.
+imagined frame with the actions that followed it. Zero staleness.
 
-Cost: real episodes also lose 7 extra sample starts each (85 vs 92 per 100). Train BOTH the
-real-only and real+aug arms with `drop_n_last_frames=15` so the comparison stays fair.
+DEFAULT: ep_len=10 / drop=9 / pad-mode hold. Rows L0-L9 are written by this packer; L10-L15
+(6 slots) are auto-padded by the dataset as a copy of L9. Hold-padding makes that copy the
+agent's own position, so all 16 slots agree. drop=9 costs 0.9% of the real samples
+(23,796 vs 24,002 at drop=8); ep_len=16 / drop=15 would remove auto-pad entirely but strips
+the 1,442 highest-coverage real frames and measured 70.0% -> 59.5% on Control.
+`drop` is global, so train BOTH the real-only and real+aug arms with the same value.
 
 WHICH PAIRS ARE USABLE
 ----------------------
-In `proto_cl_aligned.py` the policy sees the REAL anchor frame at round 0 and imagined frame
+In `closed_loop_rollout.py` the policy sees the REAL anchor frame at round 0 and imagined frame
 `j` at round `j+1`, so the executed chunk following imagined frame `j` starts at
 `exec_abs_targets[fi*(j+1)]`. A full 16-action horizon needs `fi*(j+1) + 16 <= h_max*fi`,
 i.e. `j <= h_max - 1 - 16/fi`: for h_max=8 that is j = 0..3, so **4 samples per rollout**.
@@ -36,6 +40,18 @@ produced the accepted outcome and therefore what rejection sampling should reinf
 Actions are clipped to the real dataset's action range so an aggregated MIN_MAX normalizer
 stays anchored to the real distribution.
 
+PAIR INDEX SIDECAR
+------------------
+`<root>/meta/pair_index.json` maps each packed episode back to the branch it came from:
+`{"accepted": ..., "pairs": [{"episode_index", "branch", "j", "k0", "cross", "n_real"}, ...]}`.
+Data attribution (CUPID/TRAK) scores packed episodes, and this is the only record of which
+branch / imagined round each one is. `episode_index` is local to THIS dataset: after
+`aggregate_datasets(["local/pusht_imgonly", <this>])` add the real episode count (206).
+
+`--index-only` writes the sidecar for an EXISTING pack without touching its data: rerun with
+the exact original arguments (incl. `--sample-seed`); every episode's actions are checked
+against the replayed selection, so mismatched arguments fail instead of mislabelling.
+
     uv run --extra training python examples/nanowm_pusht_aug/datagen/pack_closed_loop.py \
         --accepted examples/nanowm_pusht_aug/cl/accepted_t11 \
         --repo-id local/pusht_imgonly_cl_aug
@@ -44,6 +60,7 @@ stays anchored to the real distribution.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -88,6 +105,35 @@ def to96(f224: np.ndarray) -> np.ndarray:
     return t[0].permute(1, 2, 0).round().clamp(0, 255).byte().numpy()
 
 
+def verify_existing_pack(root: Path, repo_id: str, pairs: list[dict], accepted: Path, fi: int) -> None:
+    """Fail unless every episode of the pack at `root` starts with the actions `pairs` says it
+    should. Only row 0 is checked: it is never padded and pins down (branch, j) uniquely."""
+    hf = LeRobotDataset(repo_id, root=root).hf_dataset.select_columns(
+        ["episode_index", "frame_index", "action"]
+    )
+    first = {
+        int(e): np.asarray(a)
+        for e, fr, a in zip(hf["episode_index"], hf["frame_index"], hf["action"], strict=True)
+        if int(fr) == 0
+    }
+    if len(first) != len(pairs):
+        raise SystemExit(f"pack has {len(first)} episodes but the replayed selection has {len(pairs)}")
+    bad = [
+        r["episode_index"]
+        for r in pairs
+        if not np.allclose(
+            first[r["episode_index"]],
+            np.clip(np.load(accepted / r["branch"])["exec_abs_targets"][r["k0"]], ACTION_LO, ACTION_HI),
+            atol=1e-3,
+        )
+    ]
+    if bad:
+        raise SystemExit(
+            f"{len(bad)} episodes do not match the replayed selection (first: {bad[:5]}); wrong args?"
+        )
+    print(f"verified: all {len(pairs)} episodes match the replayed selection")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--accepted", type=Path, required=True)
@@ -99,10 +145,11 @@ def main() -> None:
     p.add_argument(
         "--ep-len",
         type=int,
-        default=9,
+        default=10,
         help="frames written per imagined episode. Must equal drop_n_last_frames+1 so the "
-        "sampler yields exactly ONE sample per episode. Default 9 pairs with the "
-        "BASELINE's drop_n_last_frames=8, leaving the real data untouched. "
+        "sampler yields exactly ONE sample per episode. Default 10 pairs with "
+        "drop_n_last_frames=9: 10 controllable slots, 6 auto-padded, -0.9%% real samples. "
+        "(ep-len 9 + drop 8 keeps the real data identical to the baseline but auto-pads 7.) "
         "(ep-len 16 + drop 15 also gives one sample, but drop=15 strips the 1442 "
         "highest-coverage real observation frames -- mean coverage 0.608 vs 0.258 "
         "for the kept ones -- which damages the very regime this augmentation targets.)",
@@ -135,8 +182,8 @@ def main() -> None:
     p.add_argument(
         "--pad-mode",
         choices=["copy", "zero", "hold"],
-        default="copy",
-        help="What to write into label slots with no genuine executed action. "
+        default="hold",
+        help="What to write into label slots with no genuine executed action (default hold). "
         "'copy' repeats the last real action (keeps pushing -- commands ~8 px of "
         "extra travel). 'zero' writes (0,0), which is an absolute TARGET at the "
         "top-left corner, i.e. a large out-of-range command, not a no-op. "
@@ -198,6 +245,12 @@ def main() -> None:
         "post-peak pairs teach actions that LOSE coverage.",
     )
     p.add_argument("--overwrite", action="store_true")
+    p.add_argument(
+        "--index-only",
+        action="store_true",
+        help="write meta/pair_index.json for an existing pack at --root/--repo-id without "
+        "repacking. Pass the pack's original arguments; actions are verified per episode.",
+    )
     args = p.parse_args()
 
     files = sorted(args.accepted.glob("*.npz"))
@@ -213,19 +266,23 @@ def main() -> None:
         raise SystemExit(f"no accepted rollouts in {args.accepted}")
 
     root = args.root or Path.home() / ".cache/huggingface/lerobot" / args.repo_id
-    if root.exists():
-        if not args.overwrite:
-            raise SystemExit(f"{root} exists; pass --overwrite")
-        shutil.rmtree(root)
-
-    ds = LeRobotDataset.create(
-        repo_id=args.repo_id,
-        fps=args.fps,
-        features=FEATURES,
-        root=root,
-        robot_type="pusht_sim",
-        use_videos=True,
-    )
+    if args.index_only:
+        if not root.exists():
+            raise SystemExit(f"--index-only needs an existing pack at {root}")
+        ds = None
+    else:
+        if root.exists():
+            if not args.overwrite:
+                raise SystemExit(f"{root} exists; pass --overwrite")
+            shutil.rmtree(root)
+        ds = LeRobotDataset.create(
+            repo_id=args.repo_id,
+            fps=args.fps,
+            features=FEATURES,
+            root=root,
+            robot_type="pusht_sim",
+            use_videos=True,
+        )
 
     H, fi = args.horizon, args.fi
     n_ep = n_clip = n_skip = 0
@@ -277,20 +334,33 @@ def main() -> None:
         print(f"subsampled to {len(cands)} pairs (seed {args.sample_seed}) to hold dose constant")
 
     # ---- pass 2: write the selected pairs ----
+    pairs = []  # sidecar rows, in packed-episode order
     for f, j, k0, cross in cands:
         d = np.load(f)
-        frames, tgts = d["frames"], d["exec_abs_targets"]
+        tgts = d["exec_abs_targets"]
         n_act = len(tgts)
-        track = agent_track(d["anchor_state"], tgts) if args.pad_mode == "hold" else None
-        img = to96(frames[j])
-        raw = tgts[k0 : k0 + H]
-        if len(raw) < H:  # ran off the end of the executed stream
-            raw = np.concatenate([raw, np.repeat(raw[-1:], H - len(raw), 0)], 0)
-        chunk = np.clip(raw.copy(), ACTION_LO, ACTION_HI)
         n_real = H
         if cross is not None and args.frame_window is None:
             n_real = min(H, fi * (cross - j))  # genuine pre-crossing actions available
         n_real = min(n_real, max(0, n_act - k0))
+        pairs.append(
+            {
+                "episode_index": len(pairs),
+                "branch": f.name,
+                "j": int(j),
+                "k0": int(k0),
+                "cross": None if cross is None else int(cross),
+                "n_real": int(n_real),
+            }
+        )
+        if args.index_only:
+            continue
+        track = agent_track(d["anchor_state"], tgts) if args.pad_mode == "hold" else None
+        img = to96(d["frames"][j])
+        raw = tgts[k0 : k0 + H]
+        if len(raw) < H:  # ran off the end of the executed stream
+            raw = np.concatenate([raw, np.repeat(raw[-1:], H - len(raw), 0)], 0)
+        chunk = np.clip(raw.copy(), ACTION_LO, ACTION_HI)
         if n_real < H:
             if args.pad_mode == "zero":
                 chunk[n_real:] = 0.0
@@ -308,7 +378,17 @@ def main() -> None:
             ds.add_frame({"observation.image": img, "action": chunk[u].astype(np.float32), "task": "pusht"})
         ds.save_episode()
         n_ep += 1
-    ds.finalize()
+
+    if args.index_only:
+        verify_existing_pack(root, args.repo_id, pairs, args.accepted, fi)
+    else:
+        ds.finalize()
+    (root / "meta" / "pair_index.json").write_text(
+        json.dumps({"accepted": str(args.accepted), "pairs": pairs}, indent=1)
+    )
+    print(f"pair index: {len(pairs)} episodes -> {root / 'meta' / 'pair_index.json'}")
+    if args.index_only:
+        return
 
     print(
         f"packed {n_ep} episodes ({n_ep} training samples) from {len(files)} accepted rollouts "

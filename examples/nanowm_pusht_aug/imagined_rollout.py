@@ -1,35 +1,49 @@
 #!/usr/bin/env python
-"""Generate NanoWM imagined-rollout episodes -> raw .npz (stage 1 of 2).
+"""NanoWM imagined-rollout generation -- both modes live here.
 
-Runs in the `nanowm` conda env (diffusers 0.24.0 / torch 2.1.2 — incompatible with
-the lerobot venv). Stage 2 = datagen/run_converter.py imagined, run in the lerobot venv,
-turns the .npz into a LeRobotDataset.
+Runs in the `nanowm` conda env (diffusers 0.24.0 / torch 2.1.2, incompatible with the lerobot
+venv), so this file must never import lerobot. NanoWM + SD-VAE loading is shared by both modes
+(`load_nanowm`), which is why they sit in one file.
 
-Prototype question: does NanoWM (SD-VAE, nanowm-b2-dino-wm-pusht-100k) imagination add
-diversity that raises a data-poor PushT diffusion policy's coverage?
+CLOSED LOOP (`closed-loop`, the current direction) -- a persistent worker driven by
+`eval/closed_loop_rollout.py` in the lerobot venv. The policy re-plans on each imagined frame, so
+the driver owns the policy and this side owns the world model; they exchange numbered .npz files
+in a work dir:
 
-Method (branch source = the 185 pusht_noise demo corridors, in-distribution for NanoWM):
+    driver writes  work/seeds_expanded.npz   (frames_224: (bs,H,224,224,3) uint8)   -- once
+    driver writes  work/chunks_<r>.npz       (win: (bs,nf,fi*2) f32, live: (bs,) bool)
+    worker writes  work/frames_<r+1>.npz     (frames: (bs,224,224,3) u8, cov: (bs,) f32)
+    driver writes  work/stop                 -> worker exits
+
+One round generates exactly ONE frame per branch (`n_generate_frames=1`) and the H-frame context
+window slides, so from round H onwards the context is entirely self-generated.
+
+OPEN LOOP (`open-loop`) -- no policy in the loop: branch off a real pusht_noise trajectory and
+roll NanoWM forward under the demonstrator's own actions plus Gaussian noise. Kept for world-model
+fidelity checks and as the fps-2 data path (stage 2 = `datagen/run_converter.py imagined`).
+
   1. Pick a pusht_noise train trajectory + start frame.
   2. Take `history_length` real context frames.
   3. Perturb the real rel-action sequence with Gaussian noise (the diversity source).
   4. Autoregressive NanoWM rollout with the perturbed actions -> future SD-VAE latents.
   5. VAE-decode -> RGB, resize 256 -> 224.
-  6. PD-replay the kinematic, block-independent agent from the real start state driven
-     by the same perturbed actions -> exact agent_pos at every 10 Hz step; the absolute-
-     target action label is `agent_pos[t0+4] + rel_px[t0+4]` (`--action-at end`, matching
-     datagen/run_converter.py pusht-noise).
+  6. PD-replay the kinematic, block-independent agent from the real start state driven by the same
+     perturbed actions -> exact agent_pos at every 10 Hz step; the absolute-target action label is
+     `agent_pos[t0+4] + rel_px[t0+4]` (`--action-at end`, matching run_converter.py pusht-noise).
   7. Keep only generated frames -> one imagined episode (fps 2, 224x224, image-only).
 
-Output: <out>/imagined_rollouts.npz with
-    images   (N, 224, 224, 3) uint8
-    actions  (N, 2) float32           absolute target position, [0,512]-ish
-    ep_lens  (E,) int32               frames per episode (sum == N)
-    meta     dict (json string): config used
+Output: <out>/shard_*.npz with images (N,224,224,3) u8, actions (N,2) f32, ep_lens (E,) i32,
+plus <out>/meta.json.
 
 Run:
+    NW=~/miniconda3/envs/nanowm/bin/python
+    P=examples/nanowm_pusht_aug
+
+    # closed loop: normally spawned by eval/closed_loop_rollout.py, not by hand
+    $NW $P/imagined_rollout.py closed-loop --work $P/cl/work --rounds 8 --num-sampling-steps 30
+
     export DATASET_DIR=~/Downloads/bmw48-osfstorage-datasets-archive
-    ~/miniconda3/envs/nanowm/bin/python examples/nanowm_pusht_aug/rollout_imagine.py \
-        --num-samples 300 --out examples/nanowm_pusht_aug/imagined/smoke
+    $NW $P/imagined_rollout.py open-loop --num-samples 300 --out $P/imagined/smoke
 """
 
 from __future__ import annotations
@@ -38,16 +52,22 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
 import torch
 
+# Wire every search path BEFORE the imports below: isort sorts the import block
+# alphabetically, so `from datagen...` must not be relied on to run after `from diffusion...`.
+_HERE = Path(__file__).resolve().parent
 NANOWM_ROOT = Path("~/repos/nano-world-model").expanduser()
+sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(NANOWM_ROOT / "src"))
 sys.path.insert(0, str(NANOWM_ROOT / "src" / "sample"))
 os.environ.setdefault("DATASET_DIR", str(Path("~/Downloads/bmw48-osfstorage-datasets-archive").expanduser()))
 
+from datagen.coverage_from_frame import coverage_from_frame  # noqa: E402
 from diffusion import create_diffusion  # noqa: E402
 from diffusion.df_sample import dfot_sample  # noqa: E402
 from latent_codecs import (  # noqa: E402
@@ -107,30 +127,123 @@ def load_nanowm(device: str):
     return cfg, model, vae, diffusion
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--num-samples", type=int, default=2000)
-    p.add_argument(
-        "--rollout-length",
-        type=int,
-        default=20,
-        help="total NanoWM frames (context+gen). *fi must fit pusht_noise ep length ~109",
-    )
-    p.add_argument("--history-length", type=int, default=3)
-    p.add_argument("--action-noise-std", type=float, default=10.0, help="Gaussian sigma on rel actions, px")
-    p.add_argument("--num-sampling-steps", type=int, default=40)
-    p.add_argument("--batch-size", type=int, default=2)
-    p.add_argument("--decode-chunk", type=int, default=8, help="frames per VAE decode call (memory)")
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--out", type=Path, default=Path("examples/nanowm_pusht_aug/imagined/run"))
-    p.add_argument("--shard-every", type=int, default=100, help="flush a shard_*.npz every N episodes")
-    p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    args = p.parse_args()
+def _wait(path: Path, timeout: float = 1200.0) -> bool:
+    t0 = time.time()
+    while not path.exists():
+        if (path.parent / "stop").exists():
+            return False
+        if time.time() - t0 > timeout:
+            raise TimeoutError(f"worker timed out waiting for {path}")
+        time.sleep(0.3)
+    return True
+
+
+def _save_atomic(path: Path, **arrays) -> None:
+    tmp = path.with_suffix(".tmp.npz")
+    np.savez(tmp, **arrays)
+    tmp.rename(path)
+
+
+def closed_loop(args) -> None:
+    """Persistent worker: advance every branch one imagined frame per round, driven by the
+    lerobot-venv driver through .npz files in `args.work`."""
+    work = args.work
+    work.mkdir(parents=True, exist_ok=True)
+    dev = args.device
+
+    cfg, model, vae, diffusion = load_nanowm(dev)
+    Cz, Sz = get_model_latent_channels(cfg), get_model_latent_size(cfg)
+    nf = cfg.model.num_frames
+    img_size = int(cfg.model.image_size)
+    vae_prec = cfg.experiment.infra.vae_precision
+    H = args.history
+    print(f"[wm] loaded. Cz={Cz} Sz={Sz} nf={nf} img={img_size} H={H} rounds={args.rounds}", flush=True)
+
+    if not _wait(work / "seeds_expanded.npz"):
+        print("[wm] stop before seeds", flush=True)
+        return
+    seed_frames = np.load(work / "seeds_expanded.npz")["frames_224"]  # (bs,224,224,3) or (bs,H,224,224,3) u8
+    multi = seed_frames.ndim == 5
+    bs = len(seed_frames)
+    if multi:  # (bs,Hs,224,224,3) real context frames
+        Hs = seed_frames.shape[1]
+        f = torch.from_numpy(seed_frames).float().permute(0, 1, 4, 2, 3).div(255.0)  # (bs,Hs,3,224,224)
+        f = resize_frames(f.reshape(bs * Hs, 3, 224, 224), (img_size, img_size), "stretch")
+        f = (f * 2.0 - 1.0).reshape(bs, Hs, 3, img_size, img_size)
+        lat_parts = []
+        for i in range(0, bs, args.wm_batch):
+            lat_parts.append(
+                encode_frames(vae, f[i : i + args.wm_batch].to(dev), dev, vae_precision=vae_prec).cpu()
+            )
+        gen_lat = torch.cat(lat_parts, dim=0).to(dev)  # (bs,Hs,Cz,Sz,Sz)
+        if Hs < H:
+            raise SystemExit(
+                f"[wm] got {Hs} context frames, need {H}. Padding by repeating frame 0 would "
+                "fabricate a STATIC past -- the original alignment bug, which made the real "
+                "actions land ~1.0 s early (open-loop tracking corr 0.958 -> 0.347). The driver "
+                f"must send {H} frames spaced fi sim-steps apart. See diag/ROOT_CAUSE_BRIEF.md."
+            )
+    else:
+        raise SystemExit(
+            "[wm] seeds_expanded.npz holds a single frame per branch (bs,224,224,3). Replicating "
+            f"it to {H} context slots fabricates a static past -- the original alignment bug. "
+            "Send (bs,H,224,224,3) real frames fi sim-steps apart instead."
+        )
+    print(f"[wm] seeded bs={bs}  multi_context={multi}", flush=True)
+
+    for r in range(args.rounds):
+        if not _wait(work / f"chunks_{r}.npz"):
+            print(f"[wm] stop at round {r}", flush=True)
+            return
+        d = np.load(work / f"chunks_{r}.npz")
+        win = torch.from_numpy(d["win"].astype(np.float32)).to(dev)  # (bs,nf,fi*2)
+
+        # sub-batch the NanoWM forward over branches (GPU memory)
+        parts = []
+        for i in range(0, bs, args.wm_batch):
+            j = min(i + args.wm_batch, bs)
+            pred = dfot_sample(
+                diffusion=diffusion,
+                model=model.forward,
+                shape=(j - i, nf, Cz, Sz, Sz),
+                context=gen_lat[i:j, -H:],
+                n_context_frames=H,
+                scheduling_mode=cfg.model.scheduling_mode,
+                num_sampling_steps=args.num_sampling_steps,
+                model_kwargs={"y": None, "use_fp16": False, "action": win[i:j]},
+                device=dev,
+                progress=False,
+                eta=0.0,
+                clip_denoised=False,
+                n_generate_frames=1,
+                history_stabilization_level=cfg.experiment.diffusion.history_stabilization_level,
+            )
+            parts.append(pred[:, H : H + 1])
+        new_lat = torch.cat(parts, dim=0)  # (bs,1,Cz,Sz,Sz)
+        gen_lat = torch.cat([gen_lat, new_lat], dim=1)
+
+        rgb_parts = []
+        for c0 in range(0, bs, args.decode_chunk):
+            ch = decode_latents(vae, new_lat[c0 : c0 + args.decode_chunk], vae_precision=vae_prec)[:, 0]
+            ch = torch.nn.functional.interpolate(ch, size=IMAGE_HW, mode="bilinear", align_corners=False)
+            rgb_parts.append((ch.clamp(0, 1) * 255).to(torch.uint8).cpu())
+        rgb = torch.cat(rgb_parts).permute(0, 2, 3, 1).numpy()  # (bs,224,224,3) u8
+
+        _cf = [coverage_from_frame(rgb[b]) for b in range(bs)]
+        cov = np.array([c["coverage_cal"] for c in _cf], np.float32)
+        cov_raw = np.array([c["coverage"] for c in _cf], np.float32)
+        _save_atomic(work / f"frames_{r + 1}.npz", frames=rgb, cov=cov, cov_raw=cov_raw)
+        print(f"[wm] round {r} -> frames_{r + 1}  cov mean={cov.mean():.3f} max={cov.max():.3f}", flush=True)
+
+    print("[wm] done", flush=True)
+
+
+def open_loop(args) -> None:
+    """Branch off real pusht_noise trajectories under perturbed demonstrator actions."""
 
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
     dev = args.device
-    torch.set_grad_enabled(False)
     args.out.mkdir(parents=True, exist_ok=True)
 
     cfg, model, vae, diffusion = load_nanowm(dev)
@@ -283,6 +396,44 @@ def main() -> None:
 
     flush_shard()
     print(f"\nDone. {done} episodes across {shard_idx} shard(s) -> {args.out}")
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    modes = p.add_subparsers(dest="mode", required=True)
+
+    cl = modes.add_parser("closed-loop", help="persistent worker for eval/closed_loop_rollout.py")
+    cl.add_argument("--work", type=Path, required=True)
+    cl.add_argument("--rounds", type=int, default=8, help="H_max NanoWM steps")
+    cl.add_argument("--history", type=int, default=3, help="n_context_frames fed to NanoWM")
+    cl.add_argument("--num-sampling-steps", type=int, default=30)
+    cl.add_argument("--wm-batch", type=int, default=24, help="branches per NanoWM forward (GPU memory)")
+    cl.add_argument("--decode-chunk", type=int, default=16)
+    cl.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    cl.set_defaults(fn=closed_loop)
+
+    ol = modes.add_parser("open-loop", help="branch off real trajectories with perturbed actions")
+    ol.add_argument("--num-samples", type=int, default=2000)
+    ol.add_argument(
+        "--rollout-length",
+        type=int,
+        default=20,
+        help="total NanoWM frames (context+gen). *fi must fit pusht_noise ep length ~109",
+    )
+    ol.add_argument("--history-length", type=int, default=3)
+    ol.add_argument("--action-noise-std", type=float, default=10.0, help="Gaussian sigma on rel actions, px")
+    ol.add_argument("--num-sampling-steps", type=int, default=40)
+    ol.add_argument("--batch-size", type=int, default=2)
+    ol.add_argument("--decode-chunk", type=int, default=8, help="frames per VAE decode call (memory)")
+    ol.add_argument("--seed", type=int, default=0)
+    ol.add_argument("--out", type=Path, default=Path("examples/nanowm_pusht_aug/imagined/run"))
+    ol.add_argument("--shard-every", type=int, default=100, help="flush a shard_*.npz every N episodes")
+    ol.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ol.set_defaults(fn=open_loop)
+
+    args = p.parse_args()
+    torch.set_grad_enabled(False)
+    args.fn(args)
 
 
 if __name__ == "__main__":

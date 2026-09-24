@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 """Closed-loop imagined rollout + rejection sampling, with CORRECT context/action alignment.
 
-Aligned replacement for `proto_closed_loop_rollout.py`, whose 0/128 strict-terminal accept
-rate produced the project's original fail-fast. That script seeded the NanoWM worker with a
-SINGLE seed frame replicated to H context slots and started the real actions at action group
-0, so the first (H-1)*fi steps of every window described a fictitious past -- the real actions
-landed ~1.0 s early. See diag/ROOT_CAUSE_BRIEF.md; the alignment A/B (proto_ol_aligned.py)
-moves open-loop tracking from corr 0.347 to 0.958, and an offset sweep degrades monotonically
-(off0 0.984, off2 0.934, off5 0.412, off8 0.358, off11 0.259).
+Drives the NanoWM worker (`imagined_rollout.py closed-loop`, nanowm conda env) over .npz files
+in a work dir; this side owns the policy, that side owns the world model.
+
+The first closed-loop attempt accepted 0/128 on the strict-terminal criterion and caused the
+project's original fail-fast. It seeded the worker with a SINGLE frame replicated to H context
+slots and started the real actions at action group 0, so the first (H-1)*fi steps of every window
+described a fictitious past and the real actions landed ~1.0 s early. Fixing the alignment moved
+open-loop tracking from corr 0.347 to 0.958, and an offset sweep degrades monotonically (off0
+0.984, off2 0.934, off5 0.412, off8 0.358, off11 0.259). Both scripts involved are gone; the
+analysis is in diag/ROOT_CAUSE_BRIEF.md and the worker now REFUSES an under-length context
+instead of padding it.
 
 ALIGNMENT CONTRACT. NanoWM's DFoT call takes nf(=4) frames -- H(=3) context + 1 generated --
 plus an action window of nf*fi(=20) sim steps reshaped to (nf, fi*2). Action group j drives
@@ -21,7 +25,7 @@ the transition STARTING AT FRAME j, so round r's window must span stream steps
 Per round each branch re-plans on its own imagined frame, so this is a true closed loop.
 Strict-terminal accept: imagined coverage[last] >= --accept-cov.
 
-    uv run --extra training python examples/nanowm_pusht_aug/eval/proto_cl_aligned.py \
+    uv run --extra training python examples/nanowm_pusht_aug/eval/closed_loop_rollout.py \
         --ckpt outputs/train/pushtnoise_clean/obs1_s100000/checkpoints/last/pretrained_model \
         --seeds examples/nanowm_pusht_aug/cl/seeds_pn_mid.npz --n-seeds 32 --k 4 --h-max 8 \
         --work examples/nanowm_pusht_aug/cl/work_cl_aligned \
@@ -81,7 +85,7 @@ def sample_chunks(policy, pre, post, frames96: np.ndarray, k: int, dev: str) -> 
 
     Goes through `diffusion.conditional_sample` directly: the public `generate_actions` slices
     to n_action_steps, and the window lookahead needs the full horizon. (Same call as
-    proto_closed_loop_rollout.py, which was validated end-to-end.)
+    the original closed-loop script, which was validated end-to-end.)
     """
     img = torch.from_numpy(frames96).float().permute(0, 3, 1, 2).div(255.0).to(dev)
     img = pre({"observation.image": img})["observation.image"]
@@ -220,7 +224,8 @@ def main() -> None:
     proc = subprocess.Popen(
         [
             str(NANOWM_PY),
-            str(_PROJ / "proto_cl_wm_worker.py"),
+            str(_PROJ / "imagined_rollout.py"),
+            "closed-loop",
             "--work",
             str(work),
             "--rounds",

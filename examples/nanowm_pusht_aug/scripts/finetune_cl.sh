@@ -2,19 +2,21 @@
 # Fine-tune one arm of the closed-loop augmentation comparison.
 #   arm A (real-only) : bash finetune_cl.sh a
 #   arm B (real+aug)  : bash finetune_cl.sh b
+#   any dataset       : bash finetune_cl.sh repo=local/<repo_id>   (tag = repo id minus 'local/')
+# SAVE_FREQ (env, default 10000): 20000 keeps only the final checkpoint (~2 GB instead of ~6 GB).
 # BOTH arms are identical except for the dataset: same pretrained checkpoint, same seed,
-# same LR, same steps, and drop_n_last_frames=8 -- the BASELINE's own value. The imagined
-# set uses 9-frame episodes so the sampler still yields exactly ONE sample each, which
-# means the real data is byte-identical to the recipe that scored 65.0%. (The earlier
-# 16-frame layout forced drop=15, which silently stripped the 1442 highest-coverage real
-# observation frames -- mean coverage 0.608 vs 0.258 kept -- from BOTH arms.)
+# same LR, same steps, and the same drop_n_last_frames (4th arg, default 9). drop MUST equal
+# the packer's --ep-len minus 1 so each imagined episode yields exactly ONE sample: default
+# ep-len 10 -> drop 9 (-0.9% real samples vs the baseline's 8). Pass 8 for ep-len-9 datasets.
+# (The earlier 16-frame layout forced drop=15, which silently stripped the 1442 highest-coverage
+# real observation frames -- mean coverage 0.608 vs 0.258 kept -- from BOTH arms.)
 # The aggregate's normalization stats were pinned to the real-only set, so VISUAL MEAN_STD
 # normalization is identical in both arms as well.
 set -euo pipefail
 ARM="${1:?usage: finetune_cl.sh a-or-b}"
 SEED="${2:-1000}"
 STEPS="${3:-20000}"
-DROP="${4:-8}"
+DROP="${4:-9}"
 CKPT=outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model
 case "$ARM" in
   a) REPO_ID=local/pusht_imgonly;         TAG=a_real_only ;;
@@ -32,6 +34,7 @@ case "$ARM" in
   untrimmed_h)  REPO_ID=local/pusht_plus_untrimmed_h10;   TAG=untrimmed_h10 ;;
   allpre_h)     REPO_ID=local/pusht_plus_allpre_h10;      TAG=allpre_h10 ;;
   windowv)      REPO_ID=local/pusht_plus_windowv464;      TAG=windowv464 ;;
+  repo=*)       REPO_ID="${ARM#repo=}";                  TAG="${REPO_ID#local/}" ;;
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
 ROOT="${HF_LEROBOT_HOME:-$HOME/.cache/huggingface/lerobot}/$REPO_ID"
@@ -53,7 +56,7 @@ uv run --extra training lerobot-train \
   --batch_size=64 \
   --num_workers=4 \
   --steps="$STEPS" \
-  --save_freq=10000 \
+  --save_freq="${SAVE_FREQ:-10000}" \
   --env_eval_freq=0 \
   --seed="$SEED" \
   --output_dir="$OUT"

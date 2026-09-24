@@ -44,7 +44,7 @@ for arm in a untrimmed_h allpre_h; do
     allpre_h)    tag=allpre_h10 ;;
   esac
   rm -rf outputs/train/cl_aug/${tag}_d9_s1000
-  bash $P/eval/finetune_cl.sh $arm 1000 20000 9
+  bash $P/scripts/finetune_cl.sh $arm 1000 20000 9
   for NA in 5 16; do
     uv run --extra training lerobot-eval \
       --policy.path=outputs/train/cl_aug/${tag}_d9_s1000/checkpoints/last/pretrained_model \

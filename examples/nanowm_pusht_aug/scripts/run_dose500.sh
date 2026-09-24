@@ -33,7 +33,7 @@ for i in range(4):
 echo '=== SEEDS3 DONE ==='
 for i in 0 1 2 3; do
   rm -rf $P/cl/accepted_s3_$i
-  uv run --extra training python $P/eval/proto_cl_aligned.py --ckpt $CKPT \
+  uv run --extra training python $P/eval/closed_loop_rollout.py --ckpt $CKPT \
     --seeds $P/cl/seeds3_part$i.npz --n-seeds 250 --k 4 --h-max 8 \
     --num-sampling-steps 30 --wm-batch 24 --accept-mode pair --accept-cov 0.95 \
     --work $P/cl/work_s3_$i --out $P/cl/accepted_s3_$i
@@ -88,8 +88,8 @@ echo '=== AGGREGATE DONE ==='
 # ---------- 6. train + eval all three ----------
 for arm in untrimmed500 trimmed500 verified500; do
   rm -rf outputs/train/cl_aug/${arm}_d8_s1000
-  bash $P/eval/finetune_cl.sh $arm 1000 20000
-  bash $P/eval/proto_eval_pusht.sh outputs/train/cl_aug/${arm}_d8_s1000/checkpoints/last/pretrained_model \
+  bash $P/scripts/finetune_cl.sh $arm 1000 20000 8   # ep-len 9 recipe -> drop 8
+  bash $P/scripts/proto_eval_pusht.sh outputs/train/cl_aug/${arm}_d8_s1000/checkpoints/last/pretrained_model \
     outputs/eval/cl_aug/${arm} 200 100000
   echo "=== ${arm} DONE ==="
 done

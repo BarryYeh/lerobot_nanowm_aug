@@ -1,7 +1,7 @@
 # Generated data + run artefacts. Everything here is reproducible from the
 # scripts in this directory; none of it belongs in git.
 #
-# imagined/ : rollout_imagine.py .npz shards (stage 1 output)
+# imagined/ : imagined_rollout.py open-loop .npz shards (stage 1 output)
 # cl/       : closed-loop branch pools / accepted rollouts
 # diag/     : diagnostic figures, videos, calibration .npz
 # logs/     : training / eval logs

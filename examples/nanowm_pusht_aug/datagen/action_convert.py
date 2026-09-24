@@ -7,7 +7,7 @@ NanoWM speaks RELATIVE per-10Hz-step displacements: raw pixels /100, then
 Conversion needs the agent position at each step: rel[t] = abs_target[t] - agent_pos[t]
 (both envs do `pd_target = agent.position + a` for a relative action).
 
-`pd_step` here is the block-INDEPENDENT kinematic PD used by rollout_imagine.py's
+`pd_step` here is the block-INDEPENDENT kinematic PD used by imagined_rollout.py's
 pd_replay_agent (explicit semi-implicit Euler). The real envs integrate the agent Body
 through pymunk `space.step`, and while the agent is in contact with the T block the
 block's reaction force perturbs it -- so this is an APPROXIMATION, only exact for a
@@ -23,8 +23,8 @@ Pure numpy, no torch / no repo imports -> loads in either venv.
 Sources:
   nano-world-model/src/environments/pusht/pusht_env.py:487-497  (env.step, relative)
   .venv/.../gym_pusht/envs/pusht.py:241-253                     (env.step, absolute)
-  examples/nanowm_pusht_aug/rollout_imagine.py:78-84            (pd_replay_agent)
-  examples/nanowm_pusht_aug/rollout_imagine.py:216-222          (dfot action window)
+  examples/nanowm_pusht_aug/imagined_rollout.py:78-84            (pd_replay_agent)
+  examples/nanowm_pusht_aug/imagined_rollout.py:216-222          (dfot action window)
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ def rel_to_nanowm(
     frame_interval: int = NANOWM_FRAME_INTERVAL,
 ) -> np.ndarray:
     """rel_px (raw pixels, T == num_frames*frame_interval, 2) -> (num_frames, frame_interval*2)
-    normalized window, matching rollout_imagine.py:216-222.
+    normalized window, matching imagined_rollout.py:216-222.
     Pads by holding the last row when T < num_frames*frame_interval."""
     need = num_frames * frame_interval
     rel = np.asarray(rel_px, np.float64)
