@@ -1,0 +1,17 @@
+# Where does the base policy fail out of distribution, and what characterises those states?
+# (eval/proto_ood_failure_map.py -- multi-stage: pass `stage` on the CLI)
+extends: nanowm_pusht_common.yaml
+
+ckpt_key: base
+seed: 500000                   # seed_namespace.ood_failure_map
+n: 1000                        # episodes per stage
+batch: 50
+k: 20                          # clusters, NOT closed_loop_rollout's k (branches) -- different axis
+bins: 20
+v_stride: 10                   # record a V-table state every N sim steps
+start_source: reset            # reset | ood
+ood_quantile: 0.95
+ood_min_dist: 0.0
+gate_success: false
+gate_min_inits: 0
+work: examples/nanowm_pusht_aug/cl/ood

@@ -1,0 +1,12 @@
+# E2 -- with the block pose FROZEN, which agent positions can the base policy recover from?
+# (eval/proto_agent_value_map.py). Branches from E1's starts, so it shares E1's seed on purpose.
+extends: nanowm_pusht_common.yaml
+
+ckpt_key: base
+seed: 400000                   # seed_namespace.agent_value_map (== mode_probe: same start states)
+n_starts: 10
+grid_step: 25.0
+rollouts: 2                    # the readable quantity is the SHAPE of the region after smoothing
+clear_px: 0.0                  # skip cells where the agent would overlap the block
+batch: 250
+out: examples/nanowm_pusht_aug/cl/e2_value_map

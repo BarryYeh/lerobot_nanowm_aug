@@ -1,0 +1,84 @@
+# Shared parameters for examples/nanowm_pusht_aug. Every value here appeared IDENTICALLY in two or
+# more scripts under eval/ (see the audit table in eval/README.md); anything that differed per
+# experiment lives in that experiment's own config instead.
+#
+# Read with attribution/config_io.py, which resolves the `extends:` chain. From a shell recipe:
+#   y() { uv run python examples/nanowm_pusht_aug/attribution/config_io.py "$CFG" "$1"; }
+#   y finetune.save_freq
+
+# ---- environment / hardware ----
+device: cuda
+nanowm_python: ~/miniconda3/envs/nanowm/bin/python   # closed_loop_rollout.py, proto_wm_fidelity_ood.py
+dataset_dir: ~/Downloads/bmw48-osfstorage-datasets-archive
+lerobot_home: ~/.cache/huggingface/lerobot
+
+# ---- PushT geometry and timing (gym_pusht facts, not choices) ----
+pusht:
+  episode_length: 300          # --max-steps in 4 scripts; gym_pusht _max_episode_steps
+  success_threshold: 0.95      # coverage; == gym_pusht success_threshold, and the accept-cov used
+  render_size: 224             # IMG in mode_probe / wm_fidelity_ood
+  policy_image_size: 96        # what the preprocessor feeds the policy
+  frame_interval: 5            # fi: 1 NanoWM step = 5 sim steps -> fps 2
+  agent_box: [22.0, 489.0]     # agent-centre range keeping a radius-15 agent inside the walls
+  img_to_sim: 5.333333333333333  # 512 / 96
+  # T-block outline in world px, CoG-centred. Byte-identical in ood_failure_map + wm_fidelity_ood.
+  t_outline: [[-60, 0], [60, 0], [60, 30], [-60, 30], [-15, 30], [-15, 120], [15, 120], [15, 30]]
+  topband_cog_y: [100.0, 145.0]  # the OOD failure band (block CoG y)
+
+# ---- NanoWM sampling (same in closed_loop_rollout + proto_wm_fidelity_ood) ----
+nanowm:
+  num_sampling_steps: 30
+  wm_batch: 24
+  history: 3                   # n_context_frames; the worker REFUSES fewer
+  num_frames: 4                # nf, fixed by the checkpoint
+  rounds: 8                    # h_max
+
+# ---- checkpoints ----
+ckpt:
+  # BASE_CKPT, hardcoded identically in 3 py files + finetune_cl.sh + run_dose500.sh
+  base: outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model
+  finetuned_untrimmed464: outputs/train/cl_aug/untrimmed464_d8_s1000/checkpoints/last/pretrained_model
+  control_d8: outputs/train/cl_aug/a_real_only_d8_s1000/checkpoints/last/pretrained_model
+
+datasets:
+  real: local/pusht_imgonly              # 206 episodes, the real-only arm and the stats anchor
+  pool_untrimmed464: local/pusht_cl_untrimmed464
+  train_untrimmed464: local/pusht_plus_untrimmed464
+
+# ---- the eval protocol every arm must share to be comparable ----
+eval:
+  n_episodes: 1000
+  seed: 100000                 # episode i -> seed 100000+i; pairs arms by episode order
+  batch_size: 50
+  n_action_steps: 10           # na8 vs na10 moves Control 64.3% -> 67.4%: never leave it implicit
+  use_async_envs: false        # the async vector env crashes on startup on this box
+
+# ---- fine-tuning from `ckpt.base` (finetune_cl.sh) ----
+finetune:
+  seed: 1000
+  steps: 20000
+  lr: 1.0e-5
+  batch_size: 64
+  drop_n_last_frames: 8        # MUST match the pack's --ep-len minus 1, and match across arms
+  image_transforms: true
+  save_freq: 20000
+
+# ---- from-scratch training (proto_train_pusht.sh, train_baseline.sh) ----
+train:
+  steps: 100000
+  batch_size: 64
+  horizon: 16
+  n_action_steps: 8
+  n_obs_steps: 1
+  save_freq: 20000
+
+# ---- seed namespaces: DELIBERATELY disjoint so experiments never share initial states ----
+# Reusing one of these in a new experiment silently correlates it with that experiment.
+seed_namespace:
+  closed_loop_leadin: 9000
+  eval: 100000
+  cupid_test_rollouts: 200000
+  wm_fidelity_ood: 300000
+  mode_probe: 400000
+  agent_value_map: 400000      # shares mode_probe's: agent_value_map branches FROM its starts
+  ood_failure_map: 500000
