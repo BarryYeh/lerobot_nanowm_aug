@@ -1,5 +1,5 @@
 # E1 -- how many of the base policy's sampling modes escape a top-wall-band start?
-# (eval/proto_mode_probe.py)
+# (eval/mode_probe.py)
 extends: nanowm_pusht_common.yaml
 
 ckpt_key: base

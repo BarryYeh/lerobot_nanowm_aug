@@ -1,5 +1,5 @@
 # Does NanoWM stay faithful in the OOD top-wall band, and does injected noise break it?
-# (eval/proto_wm_fidelity_ood.py -- multi-stage: pass `stage` on the CLI)
+# (eval/wm_fidelity_ood.py -- multi-stage: pass `stage` on the CLI)
 extends: nanowm_pusht_common.yaml
 
 ckpt_key: base

@@ -1,5 +1,5 @@
 # Where does the base policy fail out of distribution, and what characterises those states?
-# (eval/proto_ood_failure_map.py -- multi-stage: pass `stage` on the CLI)
+# (eval/ood_failure_map.py -- multi-stage: pass `stage` on the CLI)
 extends: nanowm_pusht_common.yaml
 
 ckpt_key: base

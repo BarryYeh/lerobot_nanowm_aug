@@ -8,7 +8,7 @@
 
 # ---- environment / hardware ----
 device: cuda
-nanowm_python: ~/miniconda3/envs/nanowm/bin/python   # closed_loop_rollout.py, proto_wm_fidelity_ood.py
+nanowm_python: ~/miniconda3/envs/nanowm/bin/python   # closed_loop_rollout.py, wm_fidelity_ood.py
 dataset_dir: ~/Downloads/bmw48-osfstorage-datasets-archive
 lerobot_home: ~/.cache/huggingface/lerobot
 
@@ -25,7 +25,7 @@ pusht:
   t_outline: [[-60, 0], [60, 0], [60, 30], [-60, 30], [-15, 30], [-15, 120], [15, 120], [15, 30]]
   topband_cog_y: [100.0, 145.0]  # the OOD failure band (block CoG y)
 
-# ---- NanoWM sampling (same in closed_loop_rollout + proto_wm_fidelity_ood) ----
+# ---- NanoWM sampling (same in closed_loop_rollout + wm_fidelity_ood) ----
 nanowm:
   num_sampling_steps: 30
   wm_batch: 24

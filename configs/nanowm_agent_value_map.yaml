@@ -1,5 +1,5 @@
 # E2 -- with the block pose FROZEN, which agent positions can the base policy recover from?
-# (eval/proto_agent_value_map.py). Branches from E1's starts, so it shares E1's seed on purpose.
+# (eval/agent_value_map.py). Branches from E1's starts, so it shares E1's seed on purpose.
 extends: nanowm_pusht_common.yaml
 
 ckpt_key: base
