@@ -95,3 +95,7 @@ seed_namespace:
   value_stage1_band: 700000    # value_model_topband stage 1: top-wall-band episode starts
   value_stage1_reset: 710000   # value_model_topband stage 1: random-reset episode starts
   value_stage2_anchor: 720000  # value_model_topband stage 2: imagined-branch anchor starts
+  sailor_v1_stage1_reset: 730000   # sailor_v1_reset stage 1: random-reset episode starts (env.reset(seed=730000+i))
+  sailor_v1_stage2_anchor: 740000  # sailor_v1_reset stage 2: reset rollouts that anchors are drawn FROM
+  sailor_v1_test_anchor: 750000    # sailor_v1_reset G6 test anchors: independent reset rollouts, never seen in training
+  sailor_v1_t2_checks: 760000      # sailor_v1 T2 simulator checks (noise vs clean success rate, failure timing)
