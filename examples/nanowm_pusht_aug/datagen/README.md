@@ -40,7 +40,7 @@ uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.p
 | `pusht-noise`        | `convert_pusht_noise.py`        | `pusht_noise/{train,val}` archive → `local/pusht_noise_224_fi<N>[_imgonly]`                 |
 | `pusht-imgonly`      | `convert_pusht_imgonly.py`      | `lerobot/pusht` → `local/pusht_imgonly` (drop `observation.state`)                          |
 | `pushtnoise-denoise` | `convert_pushtnoise_denoise.py` | `pusht_noise` train → `local/pushtnoise_clean185_imgonly` (185 min-residual denoised demos) |
-| `imagined`           | `pack_imagined.py`              | `imagined_rollout.py` `.npz` shards → `local/pusht_noise_224_imgonly_nanoWM_fi5`             |
+| `imagined`           | `pack_imagined.py`              | `imagined_rollout.py` `.npz` shards → `local/pusht_noise_224_imgonly_nanoWM_fi5`            |
 
 Converters use relative imports, so invoke them via the registry or as a module:
 `uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.py <name> --help`,

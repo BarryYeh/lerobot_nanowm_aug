@@ -11,12 +11,12 @@ merged with the lerobot venv (Python >= 3.12).
 The pipeline therefore crosses venvs through `.npz` files on disk, and the directory
 layout follows that boundary:
 
-| path                    | venv             | what                                                                                     |
-| ----------------------- | ---------------- | ---------------------------------------------------------------------------------------- |
-| `imagined_rollout.py`   | **nanowm uv**    | both NanoWM generation modes, sharing one `load_nanowm`: `closed-loop` (the persistent worker, spawned by `eval/closed_loop_rollout.py`) and `open-loop` (stage 1 -> `.npz` shards) |
-| `datagen/`              | **lerobot uv**   | stage 2 -- `.npz` / archives -> `LeRobotDataset` (plus the two pure-numpy modules below) |
-| `eval/`                 | **lerobot uv**   | training + eval drivers (Python)                                                          |
-| `scripts/`              | **lerobot uv**   | every shell recipe, run from the repo root                                                |
+| path                  | venv           | what                                                                                                                                                                                |
+| --------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `imagined_rollout.py` | **nanowm uv**  | both NanoWM generation modes, sharing one `load_nanowm`: `closed-loop` (the persistent worker, spawned by `eval/closed_loop_rollout.py`) and `open-loop` (stage 1 -> `.npz` shards) |
+| `datagen/`            | **lerobot uv** | stage 2 -- `.npz` / archives -> `LeRobotDataset` (plus the two pure-numpy modules below)                                                                                            |
+| `eval/`               | **lerobot uv** | training + eval drivers (Python)                                                                                                                                                    |
+| `scripts/`            | **lerobot uv** | every shell recipe, run from the repo root                                                                                                                                          |
 
 `datagen/action_convert.py` and `datagen/coverage_from_frame.py` are the exception: they
 are pure numpy (+ cv2) and are imported from **both** venvs, so they must never import
