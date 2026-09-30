@@ -58,11 +58,23 @@ from nwaug.pusht_state import load_seeds, place_body, read_body  # noqa: E402
 NANOWM_PY = Path(__file__).resolve().parents[3] / "third_party/nano-world-model/.venv/bin/python"
 
 
-def _wait(path: Path, timeout=1800.0, stop: Path | None = None):
+def _wait(path: Path, timeout=1800.0, stop: Path | None = None, proc=None):
     t0 = time.time()
     while not path.exists():
         if stop is not None and stop.exists():
             raise RuntimeError(f"worker stopped before {path.name}")
+        if proc is not None and proc.poll() is not None:
+            if path.exists():
+                return
+            log = path.parent / "wm_worker.log"
+            tail = ""
+            if log.exists():
+                lines = log.read_text().splitlines()
+                tail = "\n".join(lines[-20:])
+            raise RuntimeError(
+                f"NanoWM worker exited with code {proc.returncode} before writing {path.name}; "
+                f"last lines of {log}:\n{tail}"
+            )
         if time.time() - t0 > timeout:
             raise TimeoutError(str(path))
         time.sleep(0.3)
@@ -315,7 +327,7 @@ def main() -> None:
                 rel, _, _ = ac.abs_targets_to_rel(seg, apos[b, k0], avel[b, k0])
                 wins[b] = ac.rel_to_nanowm(rel[:need])
             _save_atomic(work / f"chunks_{r}.npz", win=wins, live=np.ones(bs, bool))
-            _wait(work / f"frames_{r + 1}.npz", stop=stop)
+            _wait(work / f"frames_{r + 1}.npz", stop=stop, proc=proc)
             fr = np.load(work / f"frames_{r + 1}.npz")
             cov_hist[:, r] = fr["cov"]
             if "cov_raw" in fr:
