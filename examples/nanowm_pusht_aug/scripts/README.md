@@ -2,7 +2,7 @@
 
 Every `.sh` in this project lives here. **All of them are run from the repo root**, not from this
 directory; the ones that need it `cd` there themselves from `$BASH_SOURCE`. Parameter defaults are
-audited in `../eval/README.md` and recorded in `configs/nanowm_*.yaml`.
+audited in `../eval/README.md`; the shared values live in `configs/nanowm_pusht_common.yaml`.
 
 ## Building blocks -- called by the pipelines below, or directly
 
