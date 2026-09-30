@@ -6,7 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -65,7 +65,7 @@ def provenance_entry(args, argv=None, **extra) -> dict:
     else:
         args_dict = _json_safe(args)
     entry = {
-        "created_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "created_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "argv": list(argv),
         "args": args_dict,
         **git_info(),

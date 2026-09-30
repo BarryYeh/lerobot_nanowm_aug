@@ -50,6 +50,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # dir that contains datagen/
 from datagen.coverage_from_frame import block_mask, pose_from_mask  # noqa: E402
 from nwaug.pusht_state import place_cog as set_state, read_cog as sim_state  # noqa: E402
+
 # set_state / sim_state names kept for importers until T15 / M2.
 
 IMG_TO_SIM = 512 / 96

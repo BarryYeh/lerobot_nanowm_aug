@@ -8,6 +8,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from datagen.provenance import git_info, provenance_entry
+
 from conftest import REPO
 
 
