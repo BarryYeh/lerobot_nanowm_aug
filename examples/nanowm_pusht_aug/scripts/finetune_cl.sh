@@ -34,6 +34,9 @@ case "$ARM" in
   untrimmed_h)  REPO_ID=local/pusht_plus_untrimmed_h10;   TAG=untrimmed_h10 ;;
   allpre_h)     REPO_ID=local/pusht_plus_allpre_h10;      TAG=allpre_h10 ;;
   windowv)      REPO_ID=local/pusht_plus_windowv464;      TAG=windowv464 ;;
+  untrimmed500) REPO_ID=local/pusht_plus_untrimmed500; TAG=untrimmed500 ;;
+  trimmed500)   REPO_ID=local/pusht_plus_trimmed500;   TAG=trimmed500 ;;
+  verified500)  REPO_ID=local/pusht_plus_verified500;  TAG=verified500 ;;
   repo=*)       REPO_ID="${ARM#repo=}";                  TAG="${REPO_ID#local/}" ;;
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
