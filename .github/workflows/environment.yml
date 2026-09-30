@@ -1,0 +1,59 @@
+name: Environment
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  english-content:
+    name: English repository content
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject Chinese text in repository files and notebook content
+        run: python3 scripts/check_repository_language.py
+
+  locked-environment:
+    name: Locked environment (${{ matrix.profile }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [core, rt1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.0"
+          enable-cache: false
+      - name: Install exactly the committed environment
+        shell: bash
+        run: |
+          if [[ "${{ matrix.profile }}" == rt1 ]]; then
+            ./nanowm sync --extra rt1
+          else
+            ./nanowm sync
+          fi
+          ./nanowm python -m pip check
+      - name: Exercise imports, Lightning precision, and video codecs
+        shell: bash
+        run: |
+          if [[ "${{ matrix.profile }}" == rt1 ]]; then
+            ./nanowm doctor --rt1 --output environment-report.json
+          else
+            ./nanowm doctor --output environment-report.json
+          fi
+      - name: Test config, model forward/backward, and existing regressions
+        run: ./nanowm python -m pytest -q
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: environment-${{ matrix.profile }}
+          path: environment-report.json
+          if-no-files-found: ignore

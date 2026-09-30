@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# The same locked interpreter/dependencies for interactive shells, SSH, and Slurm.
+set -euo pipefail
+repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+cd "$repo_dir"
+if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
+  echo 'The supported environment is Linux x86_64 (including WSL2). See docs/environment.md.' >&2
+  exit 1
+fi
+if ! command -v uv >/dev/null 2>&1; then
+  echo 'Install uv first: https://docs.astral.sh/uv/getting-started/installation/' >&2
+  exit 1
+fi
+if [[ $# == 0 ]]; then
+  echo 'Usage: ./nanowm sync [--extra rt1] | doctor [--require-cuda] [--rt1] | <command> [args...]'
+  exit 0
+fi
+case "$1" in
+  sync)
+    shift
+    exec uv sync --locked --managed-python "$@"
+    ;;
+  doctor)
+    shift
+    set -- python scripts/doctor.py "$@"
+    ;;
+esac
+# Keep explicitly installed extras (e.g. rt1) when running a base command.
+exec uv run --locked --inexact --managed-python "$@"

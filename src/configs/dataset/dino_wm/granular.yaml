@@ -1,0 +1,12 @@
+defaults:
+  - dino_wm/base
+
+name: "granular"
+frame_interval: 1
+loader:
+  data_path: "${dataset_dir}/deformable"
+  action_scale: 1.0
+  object_name: "granular"
+  normalize_action: False
+spec:
+  action_dim: 4

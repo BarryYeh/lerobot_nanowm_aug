@@ -1,0 +1,44 @@
+# DINO-WM-aligned PushT planning evaluation.
+# Mirrors the official PushT planning budget:
+# n_evals=50, dataset goals, horizon=5, execute 5 actions per replan,
+# CEM num_samples=300, topk=30, opt_steps=30.
+
+env_name: pusht
+
+n_evals: 50
+seed: 99
+n_plot_samples: 10
+output_dir: ${hydra:runtime.output_dir}/planning_results
+
+goal_source: dset
+goal_H: 5
+
+horizon: 5
+replan_every: 5
+max_episode_steps: 20
+
+# Diffusion inference steps. DINO-WM's predictor is deterministic, but NanoWM was
+# trained as a diffusion model; using 1 denoising step is a diagnostic shortcut,
+# not the normal inference protocol. Use the same DDIM budget for all backbones.
+num_sampling_steps: 20
+eta: 0.0
+
+cem:
+  num_samples: 300
+  topk: 30
+  opt_steps: 30
+  var_scale: 1.0
+  eval_every: 1
+  sigma_min: 1e-3
+  action_low: null
+  action_high: null
+  # Keeps the DINO-WM sample budget at 300 while avoiding oversized attention
+  # kernels in the diffusion rollout.
+  rollout_batch_size: 250
+
+objective:
+  mode: "last"
+  alpha: 1.0
+  base: 2.0
+  visual_metric: "mse"
+  token_dim: null

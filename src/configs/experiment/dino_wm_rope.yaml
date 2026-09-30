@@ -1,0 +1,9 @@
+defaults:
+  - default
+
+# 2 GPU × bs=8 → eff_bs=16; dataset is small (15.3K slices),
+# so 15K steps ≈ 15.7 epoch — matches DINO-WM's convention of training
+# deformable envs for many passes over the limited trajectory set.
+training:
+  max_steps: 15000
+  batch_size: 8

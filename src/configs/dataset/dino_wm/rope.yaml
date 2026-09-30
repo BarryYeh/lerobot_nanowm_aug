@@ -1,0 +1,12 @@
+defaults:
+  - dino_wm/base
+
+name: "rope"
+frame_interval: 1
+loader:
+  data_path: "${dataset_dir}/deformable"
+  action_scale: 1.0
+  object_name: "rope"
+  normalize_action: False
+spec:
+  action_dim: 4

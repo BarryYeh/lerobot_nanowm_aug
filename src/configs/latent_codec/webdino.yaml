@@ -1,0 +1,6 @@
+kind: webdino
+model_path: ${webdino_model_path}
+latent_channels: ${model.latent_channels}
+input_size: 224
+patch_size: 14
+precision: fp32

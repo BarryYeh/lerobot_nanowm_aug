@@ -1,0 +1,17 @@
+# @package _global_
+# Copy to paths.yaml (gitignored) and uncomment only settings you need.
+# Automatically loaded by src/main.py. Priority: CLI > this file > env > defaults.
+# Relative paths are anchored to the original invocation directory, even with Hydra chdir.
+# ./nanowm always starts commands at the repository root.
+
+# dataset_dir: /absolute/path/to/dino_wm_data
+# csgo_data_dir: /absolute/path/to/csgo_data
+# rt1_data_root: /absolute/path/to/rt1_fractal
+# results_dir: ./results
+# pretrained_models_dir: ./pretrained_models
+
+# Local VAE directory or Hugging Face repo ID (default: stabilityai/sd-vae-ft-mse).
+# vae_model_path: /absolute/path/to/vae
+# webdino_model_path: facebook/webssl-dino300m-full2b-224
+# vjepa21_model_path: /absolute/path/to/vjepa2_1_vit_large_384
+# vjepa2_repo_path: /absolute/path/to/facebookresearch/vjepa2
