@@ -49,6 +49,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # dir that contains datagen/
 from datagen.coverage_from_frame import block_mask, pose_from_mask  # noqa: E402
+from nwaug.pusht_state import place_cog as set_state, read_cog as sim_state  # noqa: E402
+# set_state / sim_state names kept for importers until T15 / M2.
 
 IMG_TO_SIM = 512 / 96
 THETA_IMG_TO_SIM = np.pi / 2
@@ -67,11 +69,6 @@ def feature(states: np.ndarray, mode: str = "full") -> np.ndarray:
     ang = ANGLE_RADIUS_PX * np.stack([np.cos(th), np.sin(th)], 1)
     parts = [states[:, 2:4], ang] if mode == "block" else [states[:, :4], ang]
     return np.concatenate(parts, 1).astype(np.float32)
-
-
-def sim_state(u) -> np.ndarray:
-    cog = u.block.local_to_world(u.block.center_of_gravity)
-    return np.array([*u.agent.position, cog.x, cog.y, u.block.angle % (2 * np.pi)], np.float64)
 
 
 # ---------------------------------------------------------------------------------------- density
@@ -108,23 +105,6 @@ def stage_density(args) -> None:
         args.work / "train_states.npz", states=st[ok], episode_index=np.concatenate(ep_idx)[ok]
     )
     print(f"wrote {args.work / 'train_states.npz'}")
-
-
-def set_state(u, state: np.ndarray):
-    """Place agent + block from a CoG-based state. Angle before position (see eval_baseline.py:
-    setting the angle rotates the body about its offset CoG), and the body origin is recovered
-    from the CoG so the block lands where the density feature says it is."""
-    import pymunk
-
-    u.agent.position = (float(state[0]), float(state[1]))
-    u.agent.velocity = (0.0, 0.0)
-    u.block.angle = float(state[4])
-    offset = pymunk.Vec2d(*u.block.center_of_gravity).rotated(float(state[4]))
-    u.block.position = (float(state[2]) - offset.x, float(state[3]) - offset.y)
-    u.block.velocity = (0.0, 0.0)
-    u.block.angular_velocity = 0.0
-    u.space.step(u.dt)
-    return u.get_obs()
 
 
 TOPBAND_COG_Y = (100.0, 145.0)
