@@ -53,6 +53,7 @@ from lerobot.utils.constants import OBS_IMAGES
 _PROJ = Path(__file__).resolve().parent.parent  # examples/nanowm_pusht_aug
 sys.path.insert(0, str(_PROJ))
 from datagen import action_convert as ac  # noqa: E402
+from nwaug.pusht_state import load_seeds, place_body, read_body  # noqa: E402
 
 NANOWM_PY = Path(__file__).resolve().parents[3] / "third_party/nano-world-model/.venv/bin/python"
 
@@ -175,8 +176,7 @@ def main() -> None:
     dev, H, fi, nf, k = args.device, args.hist, args.fi, args.nf, args.k
     lead = (H - 1) * fi  # 10 sim steps of real lead-in
 
-    sd = np.load(args.seeds)
-    states = sd["states"][: args.n_seeds].astype(np.float64)
+    states = load_seeds(args.seeds, "body")[: args.n_seeds]
     M = len(states)
     bs = M * k
     print(f"seeds={M} k={k} branches={bs} h_max={args.h_max} accept_cov={args.accept_cov}")
@@ -214,12 +214,7 @@ def main() -> None:
         st = states[i]
         for e_, uu in ((env96, u96), (env224, u224)):
             e_.reset(seed=9000 + i)
-            uu.agent.position = (float(st[0]), float(st[1]))
-            uu.block.angle = float(st[4])
-            uu.block.position = (float(st[2]), float(st[3]))
-            uu.block.velocity = (0.0, 0.0)
-            uu.block.angular_velocity = 0.0
-            uu.space.step(uu.dt)
+            place_body(uu, st)
         policy.reset()
         obs = u96.get_obs()
         ci = 0
@@ -231,13 +226,7 @@ def main() -> None:
             lead_vel[i, t] = np.asarray(u96.agent.velocity)
             if t == lead:
                 last96[i] = np.asarray(obs["pixels"])
-                anchor_state[i] = [
-                    u96.agent.position[0],
-                    u96.agent.position[1],
-                    u96.block.position[0],
-                    u96.block.position[1],
-                    u96.block.angle,
-                ]
+                anchor_state[i] = read_body(u96)
                 break  # frame at step `lead` captured, do NOT step
             img = (
                 torch.from_numpy(np.asarray(obs["pixels"])).permute(2, 0, 1).float().div(255.0)[None].to(dev)

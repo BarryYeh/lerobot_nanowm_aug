@@ -60,9 +60,11 @@ import torch
 
 _CRITIC = Path(__file__).resolve().parent
 sys.path.insert(0, str(_CRITIC))
+sys.path.insert(0, str(_CRITIC.parent))
 sys.path.insert(0, str(_CRITIC.parent / "eval"))
 sys.path.insert(0, str(_CRITIC.parent / "attribution"))
 from config_io import load_config  # noqa: E402
+from nwaug.pusht_state import load_seeds, place_body, read_body  # noqa: E402
 from ood_failure_map import block_wall_gap, sim_state  # noqa: E402
 from policy_io import load_policy  # noqa: E402
 from sim_rollout import rollout_batch  # noqa: E402
@@ -72,25 +74,14 @@ LEAD = 10  # real lead-in steps (driver: (H-1)*fi)
 TOL = 1e-6
 
 
-def body_state(u) -> np.ndarray:
-    """Body-origin sim state in the SAME form as the driver's `anchor_state`."""
-    return np.array([*u.agent.position, u.block.position[0], u.block.position[1], u.block.angle], np.float64)
-
-
 def agent_pv(u) -> np.ndarray:
     return np.array([*u.agent.position, *u.agent.velocity], np.float64)
 
 
 def place_seed(env, seed_index: int, st: np.ndarray) -> None:
-    """The driver's seed placement, verbatim (closed_loop_rollout.py lead-in, BODY-origin state)."""
-    u = env.unwrapped
+    """The driver's seed placement (closed_loop_rollout lead-in, BODY-origin state)."""
     env.reset(seed=9000 + seed_index)
-    u.agent.position = (float(st[0]), float(st[1]))
-    u.block.angle = float(st[4])
-    u.block.position = (float(st[2]), float(st[3]))
-    u.block.velocity = (0.0, 0.0)
-    u.block.angular_velocity = 0.0
-    u.space.step(u.dt)
+    place_body(env.unwrapped, st)
 
 
 def replay_row(env, br: dict, r: int, name: str, stats: dict) -> dict:
@@ -101,7 +92,7 @@ def replay_row(env, br: dict, r: int, name: str, stats: dict) -> dict:
     for t in range(LEAD):
         env.step(br["lead_acts"][t])
         wall_min = min(wall_min, float(block_wall_gap(sim_state(u)[None])[0]))
-    err_anchor = float(np.abs(body_state(u) - br["anchor_state"]).max())
+    err_anchor = float(np.abs(read_body(u) - br["anchor_state"]).max())
     assert err_anchor <= TOL, f"{name} r={r}: replayed anchor differs from anchor_state by {err_anchor:.3e}"
     err0 = float(np.abs(agent_pv(u) - br["agent_state_hist"][0]).max())
     assert err0 <= TOL, f"{name} r={r}: agent state at anchor differs from agent_state_hist[0] by {err0:.3e}"
@@ -155,7 +146,7 @@ def main() -> None:
     print(f"label: {len(branch_files)} branches, rounds {rounds}, B={B}, na={na} <- {root}")
 
     seeds_path = Path(cfg["out_dir"]) / "seeds_stage2.npz"
-    seeds_body = np.load(seeds_path)["states"] if seeds_path.exists() else None
+    seeds_body = load_seeds(seeds_path, "body") if seeds_path.exists() else None
 
     # ---- build the job list: (branch idx, r); r=0 only for the first branch of each seed ----
     branches, jobs, seen_seed = [], [], set()

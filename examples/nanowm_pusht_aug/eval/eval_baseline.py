@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import gym_pusht  # noqa: F401  (registers gym_pusht/PushT-v0)
@@ -51,6 +52,9 @@ import torch
 from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy
 from lerobot.policies.factory import make_pre_post_processors
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from nwaug.pusht_state import place_body  # noqa: E402
+
 SIM_STEPS_PER_ACTION = 5  # 5 x 10 Hz = 2 Hz, matches --frame-interval 5
 
 
@@ -58,14 +62,8 @@ def reset_to_pusht_state(env, state5: np.ndarray, seed: int):
     """Reset then re-apply the pose in the right order (angle before position) so the
     T-block's offset-CoG rotation doesn't displace it. Returns the pixels obs."""
     env.reset(seed=seed)
-    u = env.unwrapped
-    u.agent.position = tuple(float(x) for x in state5[:2])
-    u.block.angle = float(state5[4])
-    u.block.position = tuple(float(x) for x in state5[2:4])
-    u.block.velocity = (0.0, 0.0)
-    u.block.angular_velocity = 0.0
-    u.space.step(u.dt)
-    return u.get_obs()
+    place_body(env.unwrapped, state5)
+    return env.unwrapped.get_obs()
 
 
 def rollout_once(

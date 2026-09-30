@@ -22,11 +22,15 @@ the ~0.93-coverage stall the policy already has.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import gym_pusht  # noqa: F401
 import gymnasium as gym
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from nwaug.pusht_state import place_body  # noqa: E402
 
 SUCCESS = 0.95
 
@@ -59,12 +63,7 @@ def main() -> None:
         ic, icr = d["coverage"], d.get("coverage_raw", d["coverage"])
         st = d["anchor_state"]
         env.reset(seed=0)
-        u.agent.position = tuple(float(x) for x in st[:2])
-        u.block.angle = float(st[4])
-        u.block.position = tuple(float(x) for x in st[2:4])
-        u.block.velocity = (0.0, 0.0)
-        u.block.angular_velocity = 0.0
-        u.space.step(u.dt)
+        place_body(u, st)
         curve = []
         for t in range(len(tgts)):
             env.step(np.asarray(tgts[t], dtype=np.float64))

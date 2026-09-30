@@ -31,8 +31,10 @@ import pymunk
 
 _EVAL = Path(__file__).resolve().parent
 sys.path.insert(0, str(_EVAL))
+sys.path.insert(0, str(_EVAL.parent))
 sys.path.insert(0, str(_EVAL.parent / "attribution"))
 from config_io import load_config  # noqa: E402
+from nwaug.pusht_state import place_body, save_seeds  # noqa: E402
 from ood_failure_map import sample_topband_starts, sim_state  # noqa: E402
 
 
@@ -42,16 +44,6 @@ def cog_to_body(cog_states: np.ndarray, cog_local: pymunk.Vec2d) -> np.ndarray:
         off = cog_local.rotated(float(s[4]))
         body[i, 2:4] = s[2] - off.x, s[3] - off.y
     return body
-
-
-def place_like_closed_loop(u, st: np.ndarray) -> None:
-    """Copy of closed_loop_rollout.py's seed placement (agent, angle, body position, one step)."""
-    u.agent.position = (float(st[0]), float(st[1]))
-    u.block.angle = float(st[4])
-    u.block.position = (float(st[2]), float(st[3]))
-    u.block.velocity = (0.0, 0.0)
-    u.block.angular_velocity = 0.0
-    u.space.step(u.dt)
 
 
 def main() -> None:
@@ -93,12 +85,12 @@ def main() -> None:
         err = np.zeros(len(cog))
         for i, st in enumerate(body):
             env.reset(seed=0)
-            place_like_closed_loop(u, st)
+            place_body(u, st)
             err[i] = np.hypot(*(sim_state(u)[2:4] - cog[i, 2:4]))
         if err.max() > 0.5:
             raise SystemExit(f"{name}: body/CoG round trip off by {err.max():.2f} px -- convention mismatch")
         assert ((cog[:, 3] >= band[0]) & (cog[:, 3] < band[1])).all()
-        np.savez(out / fname, states=body, cog_states=cog)
+        save_seeds(out / fname, body=body, cog=cog)
         print(
             f"{name}: {len(cog)} starts (seed {spec['seed']}), CoG y [{cog[:, 3].min():.1f}, "
             f"{cog[:, 3].max():.1f}], placement err max {err.max():.3f} px -> {out / fname}"

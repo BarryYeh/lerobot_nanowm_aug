@@ -16,6 +16,7 @@ refinement, which is the regime a short (<= 8 NanoWM step) strict-terminal accep
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import gym_pusht  # noqa: F401
@@ -25,6 +26,9 @@ import torch
 
 from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy
 from lerobot.policies.factory import make_pre_post_processors
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from nwaug.pusht_state import read_body  # noqa: E402
 
 
 def main() -> None:
@@ -71,9 +75,8 @@ def main() -> None:
         policy.reset()
         states, frames, covs = [], [], []
         for _t in range(args.max_steps):
-            state5 = np.array(
-                [*u.agent.position, *u.block.position, u.block.angle % (2 * np.pi)], dtype=np.float64
-            )
+            state5 = read_body(u)
+            state5[4] %= 2 * np.pi
             states.append(state5)
             frames.append(env.render().astype(np.uint8))  # 224 visualization render
             covs.append(float(u._get_coverage()))
