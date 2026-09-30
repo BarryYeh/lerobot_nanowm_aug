@@ -8,7 +8,7 @@ NanoWM worker.
 Two independent groups. Import only what you need so each stays usable from the venv that
 needs it.
 
-## Stateless transforms (load in BOTH venvs — nanowm conda env + lerobot uv venv)
+## Stateless transforms (load in BOTH venvs — nanowm uv venv + lerobot uv venv)
 
 | module                   | what                                                                                                                                                                   |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

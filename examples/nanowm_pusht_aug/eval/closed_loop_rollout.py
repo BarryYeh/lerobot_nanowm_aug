@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Closed-loop imagined rollout + rejection sampling, with CORRECT context/action alignment.
 
-Drives the NanoWM worker (`imagined_rollout.py closed-loop`, nanowm conda env) over .npz files
+Drives the NanoWM worker (`imagined_rollout.py closed-loop`, nanowm venv) over .npz files
 in a work dir; this side owns the policy, that side owns the world model.
 
 The first closed-loop attempt accepted 0/128 on the strict-terminal criterion and caused the
@@ -54,7 +54,7 @@ _PROJ = Path(__file__).resolve().parent.parent  # examples/nanowm_pusht_aug
 sys.path.insert(0, str(_PROJ))
 from datagen import action_convert as ac  # noqa: E402
 
-NANOWM_PY = Path("~/miniconda3/envs/nanowm/bin/python").expanduser()
+NANOWM_PY = Path("~/repos/nano-world-model/.venv/bin/python").expanduser()
 
 
 def _wait(path: Path, timeout=1800.0, stop: Path | None = None):

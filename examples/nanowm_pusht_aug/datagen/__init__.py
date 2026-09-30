@@ -9,7 +9,7 @@ venvs:
 
   * ``action_convert``       -- NanoWM <-> diffusion-policy action converter (pure numpy)
   * ``coverage_from_frame``  -- coverage/pose from an RGB frame (numpy + cv2)
-        both load in the nanowm conda env and the lerobot venv.
+        both load in the nanowm venv and the lerobot venv.
 
   * ``dataset_converter``    -- ``LeRobotDatasetConverter`` base class
   * ``convert_*`` / ``pack_*`` -- scenario converters (lerobot venv only; need LeRobotDataset)

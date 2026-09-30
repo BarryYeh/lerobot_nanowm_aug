@@ -8,7 +8,13 @@
 
 # ---- environment / hardware ----
 device: cuda
-nanowm_python: ~/miniconda3/envs/nanowm/bin/python   # closed_loop_rollout.py, wm_fidelity_ood.py
+nanowm_python: ~/repos/nano-world-model/.venv/bin/python   # closed_loop_rollout.py, wm_fidelity_ood.py
+# NanoWM inputs (public, pinned):
+#   code : github.com/simchowitzlabpublic/nano-world-model @ cc1f151a9d8c7d7afd0cdc5de6a9ae220a7c90c0
+#   ckpt : hf knightnemo/nanowm-b2-dino-wm-pusht-100k @ 613919a5 -> ~/repos/nano-world-model/ckpt/
+#          model.safetensors sha256 2a3a48f854ea3c1a4ce844f80852da063c36c89c9181e8735faa43cc7714c60a
+#   vae  : hf stabilityai/sd-vae-ft-mse @ 31f26fde -> ~/models/sd-vae-ft-mse (VAE_MODEL_PATH)
+#          diffusion_pytorch_model.safetensors sha256 a1d993488569e928462932c8c38a0760b874d166399b14414135bd9c42df5815
 dataset_dir: ~/Downloads/bmw48-osfstorage-datasets-archive
 lerobot_home: ~/.cache/huggingface/lerobot
 

@@ -27,7 +27,7 @@ base_policy_action comes from pusht_imgonly/obs1_s100000 acting on the REAL 96px
 action queue is untouched). The same noise draw is shared by every level of a start (common random
 numbers), so levels are compared on identical noise.
 
-Stages (lerobot venv; `wm` spawns the NanoWM worker in the nanowm conda env):
+Stages (lerobot venv; `wm` spawns the NanoWM worker in the nanowm venv):
 
   real     starts x betas rolled in gym_pusht. Stores the executed stream, the EXACT agent
            position/velocity before each target (so the NanoWM relative action is exact -- no
@@ -77,7 +77,7 @@ from datagen import action_convert as ac  # noqa: E402
 from datagen.coverage_from_frame import coverage_from_frame  # noqa: E402
 from ood_failure_map import sample_topband_starts, set_state, sim_state  # noqa: E402
 
-NANOWM_PY = Path("~/miniconda3/envs/nanowm/bin/python").expanduser()
+NANOWM_PY = Path("~/repos/nano-world-model/.venv/bin/python").expanduser()
 BASE_CKPT = Path("outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model")
 H, FI, NF = 3, 5, 4  # NanoWM context frames, frame interval (sim steps), frames per DFoT call
 AGENT_BOX = (22.0, 489.0)  # agent centre range that keeps a radius-15 agent inside the walls

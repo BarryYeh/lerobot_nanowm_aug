@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 """NanoWM imagined-rollout generation -- both modes live here.
 
-Runs in the `nanowm` conda env (diffusers 0.24.0 / torch 2.1.2, incompatible with the lerobot
-venv), so this file must never import lerobot. NanoWM + SD-VAE loading is shared by both modes
+Runs in the `nanowm` venv (`uv sync` in the nano-world-model checkout: Python 3.11, torch 2.7.1 /
+diffusers 0.29.2; it cannot share the lerobot venv, which needs Python >= 3.12), so this file must
+never import lerobot. NanoWM + SD-VAE loading is shared by both modes
 (`load_nanowm`), which is why they sit in one file.
 
 CLOSED LOOP (`closed-loop`, the current direction) -- a persistent worker driven by
@@ -44,7 +45,7 @@ factor, img_size). The torch RNG is seeded once before encoding so `posterior.sa
 reproducible.
 
 Run:
-    NW=~/miniconda3/envs/nanowm/bin/python
+    NW=~/repos/nano-world-model/.venv/bin/python
     P=examples/nanowm_pusht_aug
 
     # closed loop: normally spawned by eval/closed_loop_rollout.py, not by hand
@@ -76,6 +77,10 @@ sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(NANOWM_ROOT / "src"))
 sys.path.insert(0, str(NANOWM_ROOT / "src" / "sample"))
 os.environ.setdefault("DATASET_DIR", str(Path("~/Downloads/bmw48-osfstorage-datasets-archive").expanduser()))
+# ckpt/config.yaml reads `vae_model_path: ${oc.env:VAE_MODEL_PATH,stabilityai/sd-vae-ft-mse}`.
+_VAE_DIR = Path("~/models/sd-vae-ft-mse").expanduser()
+if _VAE_DIR.is_dir():
+    os.environ.setdefault("VAE_MODEL_PATH", str(_VAE_DIR))
 
 from datagen.coverage_from_frame import coverage_from_frame  # noqa: E402
 from diffusion import create_diffusion  # noqa: E402
@@ -88,6 +93,7 @@ from latent_codecs import (  # noqa: E402
 )
 from models import get_models  # noqa: E402
 from omegaconf import OmegaConf  # noqa: E402
+from safetensors.torch import load_file  # noqa: E402
 from sampling_utils import decode_latents, encode_frames, resize_frames  # noqa: E402
 from utils.nanowm_utils import find_model  # noqa: E402
 from wm_datasets import create_train_val_datasets  # noqa: E402
@@ -127,7 +133,11 @@ def load_vae(device: str):
 def load_nanowm(device: str):
     cfg, vae = load_vae(device)
     model = get_models(cfg).to(device)
-    sd = find_model(str(NANOWM_ROOT / "ckpt" / "model.pt"))
+    ckpt_dir = NANOWM_ROOT / "ckpt"
+    if (ckpt_dir / "model.safetensors").is_file():  # the Hub release
+        sd = load_file(str(ckpt_dir / "model.safetensors"))
+    else:
+        sd = find_model(str(ckpt_dir / "model.pt"))
     sd = sd.get("model", sd)
     sd = {k[6:] if k.startswith("model.") else k: v for k, v in sd.items()}
     model.load_state_dict(sd)

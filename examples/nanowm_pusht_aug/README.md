@@ -6,13 +6,14 @@ reproducible from the scripts below.
 
 ## Layout and the two-venv split
 
-NanoWM needs diffusers 0.24.0 / torch 2.1.2, which cannot coexist with the lerobot venv.
+NanoWM has its own uv venv (Python 3.11, torch 2.7.1 / diffusers 0.29.2), which cannot be
+merged with the lerobot venv (Python >= 3.12).
 The pipeline therefore crosses venvs through `.npz` files on disk, and the directory
 layout follows that boundary:
 
 | path                    | venv             | what                                                                                     |
 | ----------------------- | ---------------- | ---------------------------------------------------------------------------------------- |
-| `imagined_rollout.py`   | **nanowm conda** | both NanoWM generation modes, sharing one `load_nanowm`: `closed-loop` (the persistent worker, spawned by `eval/closed_loop_rollout.py`) and `open-loop` (stage 1 -> `.npz` shards) |
+| `imagined_rollout.py`   | **nanowm uv**    | both NanoWM generation modes, sharing one `load_nanowm`: `closed-loop` (the persistent worker, spawned by `eval/closed_loop_rollout.py`) and `open-loop` (stage 1 -> `.npz` shards) |
 | `datagen/`              | **lerobot uv**   | stage 2 -- `.npz` / archives -> `LeRobotDataset` (plus the two pure-numpy modules below) |
 | `eval/`                 | **lerobot uv**   | training + eval drivers (Python)                                                          |
 | `scripts/`              | **lerobot uv**   | every shell recipe, run from the repo root                                                |
@@ -23,9 +24,16 @@ are pure numpy (+ cv2) and are imported from **both** venvs, so they must never 
 would collide with nano-world-model's own top-level `src/utils`, a hard dependency of
 `imagined_rollout`.
 
-Prerequisites: the nanowm env at `~/miniconda3/envs/nanowm`, the nano-world-model
-checkout at `~/repos/nano-world-model` (with `ckpt/{config.yaml,model.pt}`), and the
-DINO-WM archive at `$DATASET_DIR` (default `~/Downloads/bmw48-osfstorage-datasets-archive`).
+Prerequisites (pinned revisions and sha256 in `configs/nanowm_pusht_common.yaml`):
+
+    git clone https://github.com/simchowitzlabpublic/nano-world-model ~/repos/nano-world-model
+    (cd ~/repos/nano-world-model && uv sync)                 # -> .venv, the nanowm venv
+    hf download knightnemo/nanowm-b2-dino-wm-pusht-100k --local-dir ~/repos/nano-world-model/ckpt
+    hf download stabilityai/sd-vae-ft-mse --local-dir ~/models/sd-vae-ft-mse
+
+`imagined_rollout.py` loads `ckpt/model.safetensors` (falling back to a legacy `ckpt/model.pt`)
+and points `VAE_MODEL_PATH` at `~/models/sd-vae-ft-mse` when that directory exists. The
+DINO-WM archive is expected at `$DATASET_DIR` (default `~/Downloads/bmw48-osfstorage-datasets-archive`).
 
 ## Goal
 

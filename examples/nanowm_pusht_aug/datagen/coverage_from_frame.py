@@ -10,7 +10,7 @@ The goal never moves (pose (256,256,pi/4)). Rasterizing it analytically from the
 poly vertices is fiddly (pymunk recenters body-local coords on the centre of gravity), so
 `goal_mask` is built ONCE from a real gym_pusht render (threshold the LightGreen fill) and
 cached to `goal_mask_<size>.npy` next to this file. That cache is then usable from
-the nanowm conda env too (which cannot import gym_pusht).
+the nanowm venv too (which cannot import gym_pusht).
 
 Runs in the lerobot venv for the cache build + sanity check; the cached .npy + `block_mask`
 + `coverage_from_frame` work in either venv.
