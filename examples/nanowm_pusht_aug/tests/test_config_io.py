@@ -84,3 +84,37 @@ def test_out_dir_copy_writes_resolved(tmp_path: Path) -> None:
     assert dumped == cfg
     assert dumped["device"] == "cuda"
     assert dumped["shared"] == 1
+
+
+def test_config_snapshot_no_overwrite_same(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "c.yaml"
+    out = tmp_path / "o"
+    cfg_path.write_text(yaml.safe_dump({"device": "cuda", "out_dir": str(out)}))
+    load_config(cfg_path, out_dir_copy=True)
+    load_config(cfg_path, out_dir_copy=True)
+    assert list(out.glob("config.*.yaml")) == []
+    lines = (out / "config_provenance.jsonl").read_text().strip().splitlines()
+    assert len(lines) == 2
+
+
+def test_config_snapshot_backup_on_change(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "c.yaml"
+    out = tmp_path / "o"
+    cfg_path.write_text(yaml.safe_dump({"device": "cpu", "out_dir": str(out)}))
+    load_config(cfg_path, out_dir_copy=True)
+    old = (out / "config.yaml").read_text()
+    cfg_path.write_text(yaml.safe_dump({"device": "cuda", "out_dir": str(out)}))
+    load_config(cfg_path, out_dir_copy=True)
+    baks = list(out.glob("config.*.yaml"))
+    assert len(baks) == 1
+    assert baks[0].read_text() == old
+    assert "cuda" in (out / "config.yaml").read_text()
+
+
+def test_out_dir_copy_false_writes_nothing(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "c.yaml"
+    out = tmp_path / "o"
+    cfg_path.write_text(yaml.safe_dump({"device": "cpu", "out_dir": str(out)}))
+    load_config(cfg_path, out_dir_copy=False)
+    assert not (out / "config.yaml").exists()
+    assert not (out / "config_provenance.jsonl").exists()

@@ -6,7 +6,10 @@ recipes can read a resolved value without paying for `import lerobot` on every c
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -42,7 +45,27 @@ def load_config(path: str | Path, out_dir_copy: bool = True) -> dict:
     out = Path(cfg["out_dir"])
     out.mkdir(parents=True, exist_ok=True)
     if out_dir_copy:
-        (out / "config.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
+        text = yaml.safe_dump(cfg, sort_keys=False)
+        dest = out / "config.yaml"
+        if dest.exists() and dest.read_text() != text:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            bak = out / f"config.{ts}.yaml"
+            n = 1
+            while bak.exists():
+                bak = out / f"config.{ts}.{n}.yaml"
+                n += 1
+            dest.rename(bak)
+        dest.write_text(text)
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from datagen.provenance import provenance_entry  # noqa: E402
+
+        entry = provenance_entry(
+            None,
+            config=str(path),
+            config_sha1=hashlib.sha1(text.encode()).hexdigest(),  # noqa: S324 -- provenance id, not security
+        )
+        with (out / "config_provenance.jsonl").open("a") as f:
+            f.write(json.dumps(entry) + "\n")
     return cfg
 
 
