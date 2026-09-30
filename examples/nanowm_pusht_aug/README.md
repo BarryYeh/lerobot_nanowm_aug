@@ -26,10 +26,14 @@ would collide with nano-world-model's own top-level `src/utils`, a hard dependen
 
 Prerequisites (pinned revisions and sha256 in `configs/nanowm_pusht_common.yaml`):
 
-    git clone https://github.com/simchowitzlabpublic/nano-world-model ~/repos/nano-world-model
-    (cd ~/repos/nano-world-model && uv sync)                 # -> .venv, the nanowm venv
-    hf download knightnemo/nanowm-b2-dino-wm-pusht-100k --local-dir ~/repos/nano-world-model/ckpt
+    # NanoWM code is vendored at third_party/nano-world-model (squashed git subtree)
+    (cd third_party/nano-world-model && uv sync)             # -> .venv, the nanowm venv
+    hf download knightnemo/nanowm-b2-dino-wm-pusht-100k --local-dir third_party/nano-world-model/ckpt
     hf download stabilityai/sd-vae-ft-mse --local-dir ~/models/sd-vae-ft-mse
+
+    # update the vendored code (needs git-subtree):
+    git subtree pull --prefix third_party/nano-world-model \
+        https://github.com/simchowitzlabpublic/nano-world-model.git main --squash
 
 `imagined_rollout.py` loads `ckpt/model.safetensors` (falling back to a legacy `ckpt/model.pt`)
 and points `VAE_MODEL_PATH` at `~/models/sd-vae-ft-mse` when that directory exists. The

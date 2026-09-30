@@ -127,7 +127,8 @@ def load_action_stats(nanowm_root: str | None = None, cache_npz: str | None = No
         import sys
         from pathlib import Path
 
-        nr = Path(nanowm_root or "~/repos/nano-world-model").expanduser()
+        vendored = Path(__file__).resolve().parents[3] / "third_party" / "nano-world-model"
+        nr = Path(nanowm_root or vendored).expanduser()
         sys.path.insert(0, str(nr / "src"))
         os.environ.setdefault(
             "DATASET_DIR", str(Path("~/Downloads/bmw48-osfstorage-datasets-archive").expanduser())

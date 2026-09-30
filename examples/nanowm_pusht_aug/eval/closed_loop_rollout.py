@@ -54,7 +54,7 @@ _PROJ = Path(__file__).resolve().parent.parent  # examples/nanowm_pusht_aug
 sys.path.insert(0, str(_PROJ))
 from datagen import action_convert as ac  # noqa: E402
 
-NANOWM_PY = Path("~/repos/nano-world-model/.venv/bin/python").expanduser()
+NANOWM_PY = Path(__file__).resolve().parents[3] / "third_party/nano-world-model/.venv/bin/python"
 
 
 def _wait(path: Path, timeout=1800.0, stop: Path | None = None):

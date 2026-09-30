@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """NanoWM imagined-rollout generation -- both modes live here.
 
-Runs in the `nanowm` venv (`uv sync` in the nano-world-model checkout: Python 3.11, torch 2.7.1 /
+Runs in the `nanowm` venv (`uv sync` in third_party/nano-world-model: Python 3.11, torch 2.7.1 /
 diffusers 0.29.2; it cannot share the lerobot venv, which needs Python >= 3.12), so this file must
 never import lerobot. NanoWM + SD-VAE loading is shared by both modes
 (`load_nanowm`), which is why they sit in one file.
@@ -45,7 +45,7 @@ factor, img_size). The torch RNG is seeded once before encoding so `posterior.sa
 reproducible.
 
 Run:
-    NW=~/repos/nano-world-model/.venv/bin/python
+    NW=third_party/nano-world-model/.venv/bin/python
     P=examples/nanowm_pusht_aug
 
     # closed loop: normally spawned by eval/closed_loop_rollout.py, not by hand
@@ -72,7 +72,7 @@ import torch
 # Wire every search path BEFORE the imports below: isort sorts the import block
 # alphabetically, so `from datagen...` must not be relied on to run after `from diffusion...`.
 _HERE = Path(__file__).resolve().parent
-NANOWM_ROOT = Path("~/repos/nano-world-model").expanduser()
+NANOWM_ROOT = _HERE.parents[1] / "third_party" / "nano-world-model"
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(NANOWM_ROOT / "src"))
 sys.path.insert(0, str(NANOWM_ROOT / "src" / "sample"))

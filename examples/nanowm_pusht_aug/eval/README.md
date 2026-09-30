@@ -22,7 +22,7 @@ read one value without paying for `import lerobot`.
 | success threshold              | filter_roc `SUCCESS`, eval_baseline `--success-threshold`, `--accept-cov`    | 0.95                                         |
 | `--num-sampling-steps`         | closed_loop_rollout, wm_fidelity_ood                                         | 30                                           |
 | `--wm-batch`                   | closed_loop_rollout, wm_fidelity_ood                                         | 24                                           |
-| `NANOWM_PY`                    | closed_loop_rollout, wm_fidelity_ood                                         | `~/repos/nano-world-model/.venv/bin/python`  |
+| `NANOWM_PY`                    | closed_loop_rollout, wm_fidelity_ood                                         | `third_party/nano-world-model/.venv/bin/python` |
 | eval protocol                  | proto_eval_pusht.sh, run_pad_hold.sh, run_dose\*.sh                          | n=1000, seed 100000, bs 50, na 10, sync envs |
 | finetune hyperparams           | finetune_cl.sh, run_dose464/500.sh                                           | seed 1000, 20k steps, lr 1e-5, bs 64, drop 8 |
 | train hyperparams              | proto_train_pusht.sh, proto_train_pushtnoise.sh, train_baseline.sh           | 100k steps, bs 64, horizon 16, na 8          |
