@@ -14,6 +14,11 @@ from lerobot.utils.constants import ACTION, OBS_IMAGE, OBS_STATE
 from tests.utils import require_cuda
 
 
+def _image_batch(b: int = 2, device: str = "cpu", with_time: bool = False) -> dict[str, torch.Tensor]:
+    img = torch.rand(b, 1, 3, 96, 96, device=device) if with_time else torch.rand(b, 3, 96, 96, device=device)
+    return {OBS_IMAGE: img}
+
+
 def _image_only_cfg(**overrides) -> DiffusionConfig:
     cfg = DiffusionConfig(
         input_features={
@@ -29,18 +34,11 @@ def _image_only_cfg(**overrides) -> DiffusionConfig:
         pretrained_backbone_weights=None,
         down_dims=(32, 64, 128),
         num_inference_steps=2,
+        device="cpu",
     )
     for k, v in overrides.items():
         setattr(cfg, k, v)
     return cfg
-
-
-def _image_batch(b: int = 2, device: str = "cpu", with_time: bool = False) -> dict[str, torch.Tensor]:
-    if with_time:
-        img = torch.rand(b, 1, 3, 96, 96, device=device)
-    else:
-        img = torch.rand(b, 3, 96, 96, device=device)
-    return {OBS_IMAGE: img}
 
 
 def _train_batch(b: int = 2, device: str = "cpu", with_state: bool = False) -> dict[str, torch.Tensor]:
