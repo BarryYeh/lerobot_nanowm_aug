@@ -82,3 +82,6 @@ seed_namespace:
   mode_probe: 400000
   agent_value_map: 400000      # shares mode_probe's: agent_value_map branches FROM its starts
   ood_failure_map: 500000
+  cupid_topband_pool: 600000   # cupid_select_topband: pool / test / eval band starts
+  cupid_topband_test: 610000
+  cupid_topband_eval: 620000

@@ -1,0 +1,12 @@
+# POST-HOC follow-up to cupid_select_topband.yaml (written AFTER seeing its lambda=0 result).
+# Same features / test rollouts / pool; only the scoring changes: a ridge term on XtX, because the
+# pool is a holdout and its gradients have ~48x the leverage of real samples (lambda=0 lets that
+# leverage dominate the score). ONE lambda, fixed a priori (1e-4 x largest eigenvalue); it is NOT tuned
+# on eval outcomes. Only the CUPID arm is new -- the random arm is identical to the original one.
+extends: cupid_select_topband.yaml
+out_dir: outputs/cupid/select_topband_ridge
+xtx:
+  lambda_rel: 1.0e-4
+select:
+  methods: [cupid]
+  name_suffix: _ridge

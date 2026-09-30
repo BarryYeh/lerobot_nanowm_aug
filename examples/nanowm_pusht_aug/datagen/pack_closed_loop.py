@@ -246,6 +246,13 @@ def main() -> None:
     )
     p.add_argument("--overwrite", action="store_true")
     p.add_argument(
+        "--include-anchor",
+        action="store_true",
+        help="also pack (REAL anchor frame, exec_abs_targets[0:H]) per branch -- the pair a plain "
+        "action-noise label would give without any world model. Needs branches written with "
+        "anchor_frame (closed_loop_rollout.py). Sidecar marks it source=anchor, j=-1.",
+    )
+    p.add_argument(
         "--index-only",
         action="store_true",
         help="write meta/pair_index.json for an existing pack at --root/--repo-id without "
@@ -302,6 +309,10 @@ def main() -> None:
                 n_skip += h_max
                 continue  # never crosses -> nothing to learn from
             cross = int(c[0])
+        if args.include_anchor:
+            if "anchor_frame" not in d.files:
+                raise SystemExit(f"{f.name} has no anchor_frame -- regenerate with closed_loop_rollout.py")
+            cands.append((f, -1, 0, cross))  # the real anchor frame precedes the whole executed stream
         for j in range(h_max):
             k0 = fi * (j + 1)  # executed chunk following imagined frame j
             if cross is not None:
@@ -351,12 +362,14 @@ def main() -> None:
                 "k0": int(k0),
                 "cross": None if cross is None else int(cross),
                 "n_real": int(n_real),
+                "source": "anchor" if j < 0 else "imagined",
+                "inject_sigma": float(d["inject_sigma"]) if "inject_sigma" in d.files else 0.0,
             }
         )
         if args.index_only:
             continue
         track = agent_track(d["anchor_state"], tgts) if args.pad_mode == "hold" else None
-        img = to96(d["frames"][j])
+        img = to96(d["anchor_frame"] if j < 0 else d["frames"][j])
         raw = tgts[k0 : k0 + H]
         if len(raw) < H:  # ran off the end of the executed stream
             raw = np.concatenate([raw, np.repeat(raw[-1:], H - len(raw), 0)], 0)

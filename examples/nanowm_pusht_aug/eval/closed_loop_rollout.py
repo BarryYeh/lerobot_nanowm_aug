@@ -96,6 +96,34 @@ def sample_chunks(policy, pre, post, frames96: np.ndarray, k: int, dev: str) -> 
     return post(norm_act).detach().cpu().numpy().astype(np.float64)
 
 
+SIGMA_PX = ac.ACTION_SCALE * ac.NANOWM_A_STD  # ~20.8 px/step: std of NanoWM's training actions
+AGENT_BOX = (22.0, 489.0)  # agent centre range that keeps a radius-15 agent inside the walls
+
+
+def inject_noise(chunks, pos, vel, level: float, max_z: float, hold: int, rng) -> np.ndarray:
+    """Local exploration in NanoWM sigma units -- the scheme wm_fidelity_ood.py (--inject sigma)
+    validated against the simulator:
+
+        rel_t = (a_t - agent_t) + level * SIGMA_PX * z,   z ~ N(0, I) redrawn every `hold` steps
+        rel_t = rel_t * min(1, max_z / |rel_t / SIGMA_PX|)
+
+    agent_t is tracked along the chunk with the same PD model the stream uses, so the cap bounds the
+    relative action NanoWM actually conditions on. The fidelity sweeps set the ceiling: 3 sigma broke
+    NanoWM within one round and beta >= 1 by round 4, so levels above ~1 sigma are out of bounds.
+    """
+    out = chunks.copy()
+    bs, hz, _ = chunks.shape
+    z = rng.standard_normal((bs, -(-hz // hold), 2))
+    for b in range(bs):
+        pp, vv = pos[b].copy(), vel[b].copy()
+        for t in range(hz):
+            rel = (chunks[b, t] - pp) + level * SIGMA_PX * z[b, t // hold]
+            rel *= min(1.0, max_z / max(float(np.linalg.norm(rel / SIGMA_PX)), 1e-9))
+            out[b, t] = np.clip(pp + rel, *AGENT_BOX)
+            pp, vv = ac.pd_step(pp, vv, out[b, t])
+    return out
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ckpt", type=Path, required=True)
@@ -117,6 +145,16 @@ def main() -> None:
     )
     p.add_argument("--num-sampling-steps", type=int, default=30)
     p.add_argument("--wm-batch", type=int, default=24)
+    p.add_argument(
+        "--inject-sigma",
+        type=float,
+        default=0.0,
+        help="local action noise in NanoWM sigma units (0 = off, the original closed loop). "
+        "Keep <= 1: the fidelity sweeps show NanoWM losing the block at higher levels",
+    )
+    p.add_argument("--max-z", type=float, default=3.0, help="cap on |relative action| in sigma units")
+    p.add_argument("--noise-hold", type=int, default=5, help="steps each noise draw is held")
+    p.add_argument("--noise-seed", type=int, default=0)
     p.add_argument("--work", type=Path, default=Path("examples/nanowm_pusht_aug/cl/work_cl_aligned"))
     p.add_argument("--out", type=Path, default=Path("examples/nanowm_pusht_aug/cl/accepted_aligned"))
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -244,6 +282,11 @@ def main() -> None:
     )
 
     cur96 = np.repeat(last96, k, axis=0)  # policy input for round 0 (real frame)
+    noise_rng = np.random.default_rng(args.noise_seed)
+    if args.inject_sigma > 0:
+        print(
+            f"action noise: {args.inject_sigma} sigma, max_z {args.max_z}, hold {args.noise_hold}", flush=True
+        )
     cov_hist = np.zeros((bs, args.h_max), np.float32)
     cov_raw_hist = np.zeros((bs, args.h_max), np.float32)
     frames_hist = np.zeros((bs, args.h_max, 224, 224, 3), np.uint8)
@@ -254,6 +297,10 @@ def main() -> None:
             chunks = sample_chunks(
                 policy, pre, post, cur96[::k] if r == 0 else cur96, k if r == 0 else 1, dev
             )  # (bs, horizon, 2)
+            if args.inject_sigma > 0:
+                chunks = inject_noise(
+                    chunks, pos, vel, args.inject_sigma, args.max_z, args.noise_hold, noise_rng
+                )
             need = nf * fi
             wins = np.zeros((bs, nf, fi * 2), np.float32)
             for b in range(bs):
@@ -333,6 +380,8 @@ def main() -> None:
             coverage=cov_hist[b],
             coverage_raw=cov_raw_hist[b],
             meta=np.array([k, args.h_max, args.num_sampling_steps], np.int32),
+            anchor_frame=ctx[sid[b], H - 1],  # REAL 224px frame at the anchor (exec stream index 0)
+            inject_sigma=np.float32(args.inject_sigma),
         )
         n += 1
     np.savez(

@@ -1,0 +1,84 @@
+# CUPID add-one-in (demo SELECTION, paper Task 2) in the top-wall band -- stage 2.
+# theta = the base policy, which never saw imagined data; the pool of band-start imagined pairs is a
+# HOLDOUT: every pair is scored but none enters XtX. The test rollouts start in the band, because
+# band recovery is what this stage measures (random resets drive the block into the band in only
+# ~2.7% of episodes, so their gradients carry almost no recovery signal).
+# Pipeline: examples/nanowm_pusht_aug/scripts/run_cupid_select.sh <this file>
+extends: nanowm_pusht_common.yaml
+
+out_dir: outputs/cupid/select_topband
+
+# ---- theta and the data it was trained on (real only) ----
+ckpt: outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model   # == ckpt.base
+train_repo_id: local/pusht_imgonly
+real_episodes: 206
+drop_n_last_frames: 8         # the base checkpoint's own value
+
+# ---- the holdout pool (a separate dataset, never trained on) ----
+pool_repo_id: local/pusht_cl_topband
+pool_index: ~/.cache/huggingface/lerobot/local/pusht_cl_topband/meta/pair_index.json
+oracle_npz: null              # no simulator replay for this pool
+
+# ---- band starts (block CoG y in pusht.topband_cog_y), three disjoint sets ----
+topband:
+  min_wall_gap: 45.0          # below the agent's diameter the block is unrecoverable, not OOD
+  pool: {n: 125, seed: 600000}  # seed_namespace.cupid_topband_pool
+  test: {n: 200, seed: 610000}  # seed_namespace.cupid_topband_test
+  eval: {n: 400, seed: 620000}  # seed_namespace.cupid_topband_eval
+  wall_pen_px: 10.0           # episodes pushing the block this far through a wall are a sim artifact
+
+# ---- imagined pool generation (closed_loop_rollout.py, one run per noise level) ----
+generate:
+  k: 4
+  h_max: 8
+  inject_sigma: [0.5, 1.0]    # NanoWM sigma units. CEILING ~1: fidelity sweeps lost the block at 3 sigma
+                              # within one round and at beta>=1 by round 4; bigger noise also cut real
+                              # band escapes (beta 0.25: 79% -> 35%)
+  max_z: 3.0                  # |relative action| cap; the base policy alone runs at p99 3.3 sigma
+  noise_hold: 5
+  noise_seed: 0
+pack:
+  ep_len: 9                   # == drop_n_last_frames + 1: one sample per pair
+  include_anchor: true        # also pack (REAL anchor frame, first chunk): isolates NanoWM's contribution
+
+# ---- test rollouts: base policy from band starts ----
+rollout:
+  start_states: seeds_test.npz   # under out_dir, written by make_topband_seeds.py
+  n_episodes: 200
+  seed: 610000
+  n_action_steps: 10
+  batch_size: 50
+
+# ---- attribution (same estimator as stage 1) ----
+grad:
+  param_prefixes: [rgb_encoder., unet.]
+  num_timesteps: 256
+  loss_fn: square
+  train_crop: center
+  micro_batch: 4
+  allow_tf32: true
+  seed: 0
+sketch:
+  type: countsketch
+  proj_dim: 4000
+  n_sketches: 4
+  seed: 0
+xtx:
+  n_real: all
+  lambda_reg: 0.0
+  seed: 0
+  include_pool: false         # add-one-in: the pool is a holdout, scored but outside the Hessian proxy
+score:
+  rollout_weight: binary
+  within_rollout: sum
+  replicates: [features, features_r1]
+
+# ---- Stage 4: add the selected pairs to the real data and fine-tune from the base policy ----
+select:
+  k: 500                      # the dose of the earlier dose464/dose500 arms
+  random_seed: 0
+
+band_eval:
+  start_states: seeds_eval.npz
+  n_episodes: 400
+  n_action_steps: 10
