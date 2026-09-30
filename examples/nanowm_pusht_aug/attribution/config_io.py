@@ -56,12 +56,14 @@ def load_config(path: str | Path, out_dir_copy: bool = True) -> dict:
                 n += 1
             dest.rename(bak)
         dest.write_text(text)
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        p = str(Path(__file__).resolve().parents[1])
+        if p not in sys.path:
+            sys.path.append(p)
         from datagen.provenance import provenance_entry  # noqa: E402
 
         entry = provenance_entry(
             None,
-            config=str(path),
+            config=str(path.resolve()),
             config_sha1=hashlib.sha1(text.encode(), usedforsecurity=False).hexdigest(),
         )
         with (out / "config_provenance.jsonl").open("a") as f:

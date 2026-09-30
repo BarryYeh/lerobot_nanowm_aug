@@ -118,3 +118,26 @@ def test_out_dir_copy_false_writes_nothing(tmp_path: Path) -> None:
     load_config(cfg_path, out_dir_copy=False)
     assert not (out / "config.yaml").exists()
     assert not (out / "config_provenance.jsonl").exists()
+
+
+def test_sys_path_grows_once(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "c.yaml"
+    out = tmp_path / "o"
+    cfg_path.write_text(yaml.safe_dump({"device": "cpu", "out_dir": str(out)}))
+    load_config(cfg_path, out_dir_copy=True)
+    n = len(sys.path)
+    load_config(cfg_path, out_dir_copy=True)
+    assert len(sys.path) == n
+
+
+def test_config_field_is_absolute(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "o"
+    cfg_path = Path("c.yaml")
+    cfg_path.write_text(yaml.safe_dump({"device": "cpu", "out_dir": str(out)}))
+    load_config(cfg_path, out_dir_copy=True)
+    import json
+
+    line = json.loads((out / "config_provenance.jsonl").read_text().strip().splitlines()[0])
+    assert Path(line["config"]).is_absolute()
+    assert Path(line["config"]) == (tmp_path / "c.yaml").resolve()
