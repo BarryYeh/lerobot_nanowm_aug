@@ -42,6 +42,11 @@ uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.p
 | `pushtnoise-denoise` | `convert_pushtnoise_denoise.py` | `pusht_noise` train → `local/pushtnoise_clean185_imgonly` (185 min-residual denoised demos) |
 | `imagined`           | `pack_imagined.py`              | `imagined_rollout.py` `.npz` shards → `local/pusht_noise_224_imgonly_nanoWM_fi5`            |
 
+`DATASET_DIR` must be the parent of `pusht_noise/` (e.g. `~/Downloads/bmw48-osfstorage-datasets-archive`).
+Open-loop and a live `action_convert.load_action_stats` call make the vendored NanoWM loader write
+`wm_stats_cache/*.pt` (~2 KB, deterministic action stats) into `pusht_noise/{train,val}/`; keep those
+files — deleting them only forces the next run to recreate them.
+
 Converters use relative imports, so invoke them via the registry or as a module:
 `uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.py <name> --help`,
 or `cd examples/nanowm_pusht_aug && uv run --no-sync python -m datagen.convert_pusht_imgonly --help`.

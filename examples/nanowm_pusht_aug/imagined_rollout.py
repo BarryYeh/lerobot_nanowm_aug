@@ -22,6 +22,11 @@ window slides, so from round H onwards the context is entirely self-generated.
 OPEN LOOP (`open-loop`) -- no policy in the loop: branch off a real pusht_noise trajectory and
 roll NanoWM forward under the demonstrator's own actions plus Gaussian noise. Kept for world-model
 fidelity checks and as the fps-2 data path (stage 2 = `datagen/run_converter.py imagined`).
+`DATASET_DIR` must point at the parent of `pusht_noise/` (default
+`~/Downloads/bmw48-osfstorage-datasets-archive`). Open-loop and a live
+`action_convert.load_action_stats` read make the vendored NanoWM loader write
+`wm_stats_cache/*.pt` (~2 KB, deterministic action stats) under
+`$DATASET_DIR/pusht_noise/{train,val}/`; that cache is expected and safe to keep.
 
   1. Pick a pusht_noise train trajectory + start frame.
   2. Take `history_length` real context frames.
