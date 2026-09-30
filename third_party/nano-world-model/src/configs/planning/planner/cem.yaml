@@ -1,0 +1,19 @@
+# CEM Planner configuration
+
+# Number of action sequences to sample per iteration
+num_samples: 100
+
+# Number of top samples to use for updating distribution
+topk: 10
+
+# Number of CEM optimization iterations
+opt_steps: 5
+
+# Initial variance scale for action sampling
+var_scale: 1.0
+
+# Evaluation frequency (evaluate every N iterations)
+eval_every: 1
+
+# Planner name (for logging)
+name: "CEM"

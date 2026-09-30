@@ -1,0 +1,7 @@
+defaults:
+  - nanowm_b2
+
+arch: NanoWM-B/1
+name: NanoWM-B-1-Semantic
+latent_size: 16
+latent_channels: 1024

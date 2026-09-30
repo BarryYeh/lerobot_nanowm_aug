@@ -1,0 +1,77 @@
+# Project-specific directories
+preprocess
+results
+results_img
+sample_videos
+checkpoints/
+
+# Development files
+dev/
+dev.md
+CLAUDE.md
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python build and distribution
+*.egg-info/
+*.eggs/
+dist/
+build/
+.eggs/
+
+# Python testing
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Jupyter/IPython notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Environment files
+.env
+.env.local
+*.venv
+venv/
+ENV/
+
+# IDE and editor artifacts
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Claude Code settings
+.claude/
+.claude.json
+
+# NFS temporary files (cluster environments)
+.nfs*
+
+# Gradio artifacts
+.gradio/
+gradio_cached_examples/
+flagged/
+
+# Local configuration (user-specific paths)
+src/configs/local/paths.yaml
+
+# Hydra artifacts
+.hydra/
+outputs/
+multirun/
+*.log
+pretrained_models/
+wandb/

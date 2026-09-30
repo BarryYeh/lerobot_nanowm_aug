@@ -1,0 +1,15 @@
+defaults:
+  - default
+
+# 8 GPU × bs=8 → eff_bs=64; 4 epoch of ~3.52M train slices ≈ 220K steps.
+# We allocate 300K (~5.5 epoch) to absorb random-sampling noise.
+training:
+  max_steps: 300000
+  batch_size: 8
+
+infra:
+  # RT-1 is served through lerobot with per-frame av1 video decode;
+  # 8-worker default leaves GPUs idle. 16 workers/GPU × 8 GPU = 128 procs
+  # fits inside the 180-CPU dev box. Bump further if `nvidia-smi` shows
+  # sustained <80% GPU util.
+  num_workers: 16

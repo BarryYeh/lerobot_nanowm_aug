@@ -1,0 +1,17 @@
+# @package dataset
+loader:
+  n_rollout: null
+  data_path: null
+  split_ratio: 0.9
+  validation_size: null
+  normalize_state: False
+  normalize_action: False  # Game actions are categorical
+  train_slice_mode: "exhaustive"  # Default for game datasets
+  val_slice_mode: "exhaustive"
+  stride: 1
+  random_seed: 42
+  validation_fixed_subset_path: null
+  validation_fixed_subset_size: null
+  validation_fixed_subset_seed: 42
+  file_list: null      # Optional: path to file list (for filtering specific files)
+  use_auxiliary_state: False

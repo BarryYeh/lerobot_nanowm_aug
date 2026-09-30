@@ -1,0 +1,8 @@
+defaults:
+  - default
+
+# 8 GPU × bs=8 → eff_bs=64; 4 epoch of ~1.98M train slices ≈ 124K steps,
+# rounded down to 100K for a tidy budget (~3.2 epoch).
+training:
+  max_steps: 100000
+  batch_size: 8

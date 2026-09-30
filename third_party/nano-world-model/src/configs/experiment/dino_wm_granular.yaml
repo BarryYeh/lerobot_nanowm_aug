@@ -1,0 +1,7 @@
+defaults:
+  - default
+
+# 2 GPU × bs=8 → eff_bs=16; same sizing rationale as rope.yaml.
+training:
+  max_steps: 15000
+  batch_size: 8

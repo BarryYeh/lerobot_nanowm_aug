@@ -1,0 +1,8 @@
+kind: vjepa2_1
+model_path: ${vjepa21_model_path}
+repo_path: ${vjepa2_repo_path}
+latent_channels: ${model.latent_channels}
+input_size: 256
+patch_size: 16
+checkpoint_key: ema_encoder
+precision: fp32

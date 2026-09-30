@@ -1,0 +1,5 @@
+defaults:
+  - nanowm_l2
+
+num_frames: 16
+n_context_frames: 4

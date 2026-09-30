@@ -1,0 +1,22 @@
+defaults:
+  - game/base
+
+name: "csgo"
+frame_interval: 1  # CSGO is 3 FPS, typically no frame skipping
+
+loader:
+  data_path: "${csgo_data_dir}"
+  n_rollout: null  # null = load all episodes from file lists
+  normalize_action: False
+  resize_mode: "stretch"  # Stretch to target resolution (no black bars)
+  # Use explicit train/test split from Vid2World (aligned with their evaluation)
+  train_file_list: "src/wm_datasets/data_source/game/csgo_splits/train_split.txt"  # 5000 files (hdf5_dm_july2021 only)
+  val_file_list: "src/wm_datasets/data_source/game/csgo_splits/test_split.txt"     # 500 files (hdf5_dm_july2021 only)
+  val_start_indices: "src/wm_datasets/data_source/game/csgo_splits/csgo_validation_start_indices.npy"  # Fixed start frames for evaluation
+  use_auxiliary_state: False
+  # CSGO-specific: Use random sampling for training (5000 episodes × 1000 frames = too many slices for exhaustive)
+  train_slice_mode: "random"     # Training: random sampling for efficiency
+  val_slice_mode: "exhaustive"   # Validation: exhaustive with fixed start indices
+
+spec:
+  action_dim: 51

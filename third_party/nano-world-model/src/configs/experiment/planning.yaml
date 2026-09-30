@@ -1,0 +1,5 @@
+defaults:
+  - default
+
+name: planning
+tasks: [planning]

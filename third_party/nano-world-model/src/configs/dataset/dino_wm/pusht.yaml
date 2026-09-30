@@ -1,0 +1,14 @@
+defaults:
+  - dino_wm/base
+
+name: "pusht"
+frame_interval: 5
+loader:
+  data_path_train: "${dataset_dir}/pusht_noise/train"
+  data_path_val: "${dataset_dir}/pusht_noise/val"
+  use_relative_actions: True
+  with_velocity: True
+  action_scale: 100.0
+  normalize_action: True
+spec:
+  action_dim: 2
