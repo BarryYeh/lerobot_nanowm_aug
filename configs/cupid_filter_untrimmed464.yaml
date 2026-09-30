@@ -1,0 +1,65 @@
+# CUPID (TRAK influence) filtering of NanoWM imagined pairs -- setting B (filtering).
+# Scores every imagined pair in pusht_plus_untrimmed464 against rollouts of the checkpoint that
+# was fine-tuned on it, drops the lowest-influence pairs, and re-fine-tunes from the base policy.
+# Pipeline: examples/nanowm_pusht_aug/scripts/run_cupid_filter.sh <this file>
+# Shared values (ckpt paths, eval protocol, finetune hyperparams) come from the common config;
+# only what this experiment chooses is overridden below.
+extends: nanowm_pusht_common.yaml
+
+out_dir: outputs/cupid/untrimmed464
+
+# ---- the model being attributed (theta) and the data it was trained on ----
+# == ckpt.finetuned_untrimmed464 / datasets.train_untrimmed464 in the common config
+ckpt: outputs/train/cl_aug/untrimmed464_d8_s1000/checkpoints/last/pretrained_model
+train_repo_id: local/pusht_plus_untrimmed464
+real_episodes: 206            # imagined pair i == episode real_episodes + i after aggregation
+drop_n_last_frames: 8         # must equal the checkpoint's: defines which samples were trained on
+pool_index: ~/.cache/huggingface/lerobot/local/pusht_cl_untrimmed464/meta/pair_index.json
+oracle_npz: examples/nanowm_pusht_aug/diag/filter_roc_pool500.npz  # diagnostics only
+
+# ---- Stage 2: test rollouts of theta in gym_pusht ----
+rollout:
+  n_episodes: 200
+  seed: 200000                # seed_namespace.cupid_test_rollouts; MUST NOT overlap eval.seed
+  n_action_steps: 10          # MUST equal eval.n_action_steps: defines where the test queries sit
+  batch_size: 50
+
+# ---- per-sample gradients ----
+grad:
+  param_prefixes: [rgb_encoder., unet.]   # relative to policy.diffusion
+  num_timesteps: 256          # diffusion timesteps averaged per sample (CUPID uses 64; raised for
+                              # score reliability -- at 64 the sketch+timestep noise gave rank rho=0.49)
+  loss_fn: square             # CUPID default model-output fn: mean (pred)^2, target-free
+  train_crop: center          # center | random -- train/pool only; test is always center (eval mode)
+  micro_batch: 4              # samples per vmap call; one fp32 grad is ~1.04 GB (T=256 k=4: 17.4 GB)
+  allow_tf32: true            # T0: TF32 moves grads by ~6e-3 rel (cos 0.99998), << sketch error
+  seed: 0                     # timesteps / noise / crops
+
+# ---- projection ----
+sketch:
+  type: countsketch
+  proj_dim: 4000              # capped by XtX rank, not by compute: n_xtx/proj_dim = 6.1
+  n_sketches: 4               # independent sketches; SCORES are averaged (never the features --
+                              # different sketches are different random subspaces). Cuts sketch variance ~4x.
+  seed: 0
+
+# ---- XTX (Hessian proxy) ----
+xtx:
+  n_real: all                 # "all" or an int subsample; keep >> proj_dim when lambda_reg == 0
+  lambda_reg: 0.0
+  seed: 0
+
+# ---- aggregation into per-pair scores ----
+score:
+  rollout_weight: binary      # binary (CUPID net) | centered_max_cov
+  within_rollout: sum         # sum (CUPID sum_of_sum) | mean
+  replicates: [features, features_r1]   # final score = mean; the first two also gate on rank rho >= 0.8
+
+# ---- Stage 4 ----
+filter:
+  remove_fracs: [0.33]        # one CUPID-vs-Random pair (deadline); ~33% of the pool sits below the
+                              # real samples' 10th percentile, where CUPID and Random should differ most
+  random_seed: 0
+
+# finetune.* and eval.* are inherited unchanged from the common config, so this experiment's arms
+# are directly comparable with the existing Control / untrimmed464 / verified464 runs.

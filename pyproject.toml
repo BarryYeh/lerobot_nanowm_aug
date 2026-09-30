@@ -506,6 +506,7 @@ default.extend-ignore-identifiers-re = [
     "VanderBilt",
     "seperated_timestep",
     "DFoT",  # Diffusion Forcing Transformer (NanoWM sampler)
+    "TRAK",  # data-attribution method (Park et al. 2023), used by CUPID
 ]
 
 # Docstring coverage gate. `fail-under` is a RATCHET, not a target: it is set just below the currently
