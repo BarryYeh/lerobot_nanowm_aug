@@ -276,22 +276,9 @@ def test_call_sites_use_pusht_state(body_sets) -> None:
         eb.close()
 
 
-def test_call_sites_use_pusht_state(body_sets) -> None:
-    """place_seed / reset_to_pusht_state wrappers match legacy on set (a)."""
-    import eval_baseline
-    import label_imagined_branches
+def test_ood_aliases_are_pusht_state() -> None:
+    import ood_failure_map
+    from nwaug import pusht_state
 
-    states = body_sets[0][1]
-    for i, st in enumerate(states[:40]):
-        ea, eb = _make("pixels_agent_pos", 96), _make("pixels_agent_pos", 96)
-        legacy_place_seed(ea, i, st)
-        label_imagined_branches.place_seed(eb, i, st)
-        assert np.array_equal(full_state(ea.unwrapped), full_state(eb.unwrapped))
-        ea.close()
-        eb.close()
-        ea, eb = _make("pixels", 224), _make("pixels", 224)
-        legacy_reset_to_pusht_state(ea, st, seed=i)
-        eval_baseline.reset_to_pusht_state(eb, st, seed=i)
-        assert np.array_equal(full_state(ea.unwrapped), full_state(eb.unwrapped))
-        ea.close()
-        eb.close()
+    assert ood_failure_map.set_state is pusht_state.place_cog
+    assert ood_failure_map.sim_state is pusht_state.read_cog
