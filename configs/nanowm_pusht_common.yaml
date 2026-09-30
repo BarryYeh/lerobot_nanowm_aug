@@ -99,3 +99,4 @@ seed_namespace:
   sailor_v1_stage2_anchor: 740000  # sailor_v1_reset stage 2: reset rollouts that anchors are drawn FROM
   sailor_v1_test_anchor: 750000    # sailor_v1_reset G6 test anchors: independent reset rollouts, never seen in training
   sailor_v1_t2_checks: 760000      # sailor_v1 T2 simulator checks (noise vs clean success rate, failure timing)
+  sailor_v1_label_cont: 770000     # sailor_v1 stage-2 continuation policy sampling (label); Table D re-run uses 770001
