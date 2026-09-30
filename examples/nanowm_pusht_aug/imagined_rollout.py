@@ -118,6 +118,15 @@ def pd_replay_agent(pos0: np.ndarray, vel0: np.ndarray, rel_px: np.ndarray) -> n
     return out
 
 
+def _seq_length(src, ti: int) -> int:
+    """Trajectory length, for data sources with or without `get_seq_length` (mirrors WorldModelDataset._get_seq_length).
+
+    Vendored ``dino_wm/pusht.py`` ``PushTDataSource`` exposes only ``seq_lengths``; other sources
+    may provide ``get_seq_length``. Prefer the method when present, else index ``seq_lengths``.
+    """
+    return int(src.get_seq_length(ti)) if hasattr(src, "get_seq_length") else int(src.seq_lengths[ti])
+
+
 def load_vae(device: str):
     """Load just the cfg + SD-VAE (decoder), no NanoWM model or diffusion -- for encode-only use
     (`encode` subcommand), where the full model is unneeded weight. `load_nanowm` calls this so
@@ -373,7 +382,7 @@ def open_loop(args) -> None:
         for _ in range(bs):
             for _try in range(200):
                 ti = int(rng.integers(n_traj))
-                L = src.get_seq_length(ti)
+                L = _seq_length(src, ti)
                 if need <= L:
                     break
             sf = int(rng.integers(0, max(1, L - need + 1)))
