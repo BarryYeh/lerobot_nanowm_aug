@@ -25,7 +25,7 @@ N_ACTION=8
 DROP=$(( HORIZON - N_ACTION - N_OBS + 1 ))   # LeRobot's drop_n_last_frames formula
 
 REPO_ID=local/pusht_noise_224_fi5_imgonly
-ROOT="${HF_LEROBOT_HOME:-$HOME/.cache/huggingface/lerobot}/$REPO_ID"
+ROOT="${HF_LEROBOT_HOME:-${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/lerobot}/$REPO_ID"
 OUT="outputs/train/nanowm_aug/baseline_a_obs${N_OBS}_s${SEED}"
 
 echo "seed=$SEED n_obs_steps=$N_OBS horizon=$HORIZON n_action_steps=$N_ACTION drop_n_last_frames=$DROP -> $OUT"

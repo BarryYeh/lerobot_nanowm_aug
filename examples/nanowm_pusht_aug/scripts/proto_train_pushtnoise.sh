@@ -16,7 +16,7 @@ N_ACTION=8
 DROP=$(( HORIZON - N_ACTION - N_OBS + 1 ))   # = 8
 
 REPO_ID=local/pushtnoise_clean185_imgonly
-ROOT="${HF_LEROBOT_HOME:-$HOME/.cache/huggingface/lerobot}/$REPO_ID"
+ROOT="${HF_LEROBOT_HOME:-${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/lerobot}/$REPO_ID"
 OUT="outputs/train/pushtnoise_clean/obs${N_OBS}_s${SEED}"
 LOGDIR="examples/nanowm_pusht_aug/logs"
 LOG="$LOGDIR/train_pushtnoise_obs${N_OBS}_s${SEED}.log"

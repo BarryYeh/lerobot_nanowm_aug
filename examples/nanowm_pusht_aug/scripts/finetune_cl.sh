@@ -41,7 +41,7 @@ case "$ARM" in
   repo=*)       REPO_ID="${ARM#repo=}";                  TAG="${REPO_ID#local/}" ;;
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
-ROOT="${HF_LEROBOT_HOME:-$HOME/.cache/huggingface/lerobot}/$REPO_ID"
+ROOT="${HF_LEROBOT_HOME:-${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/lerobot}/$REPO_ID"
 OUT="outputs/train/cl_aug/${TAG}_d${DROP}_s${SEED}"
 mkdir -p examples/nanowm_pusht_aug/logs
 echo "arm=$ARM dataset=$REPO_ID seed=$SEED steps=$STEPS -> $OUT"
