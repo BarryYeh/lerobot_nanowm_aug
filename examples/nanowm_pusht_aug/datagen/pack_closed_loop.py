@@ -402,9 +402,14 @@ def main() -> None:
     if idx_path.exists():
         try:
             prev = json.loads(idx_path.read_text())
+            if "provenance" in prev and not isinstance(prev["provenance"], list):
+                raise TypeError("provenance is not a list")
             history = list(prev.get("provenance", []))
-        except Exception:  # noqa: BLE001
-            history = []
+        except Exception as e:  # noqa: BLE001
+            raise SystemExit(
+                f"{idx_path} exists but is unreadable ({e}); refusing to overwrite its provenance "
+                "-- move it aside and rerun"
+            ) from e
     from datagen.provenance import provenance_entry  # noqa: E402
 
     history.append(
@@ -412,6 +417,8 @@ def main() -> None:
             args,
             mode="index-only" if args.index_only else "pack",
             n_pairs=len(pairs),
+            root=str(root),
+            hf_lerobot_home=str(HF_LEROBOT_HOME),
         )
     )
     idx_path.write_text(
