@@ -35,6 +35,14 @@ fidelity checks and as the fps-2 data path (stage 2 = `datagen/run_converter.py 
 Output: <out>/shard_*.npz with images (N,224,224,3) u8, actions (N,2) f32, ep_lens (E,) i32,
 plus <out>/meta.json.
 
+ENCODE (`encode`) -- offline batch SD-VAE encode, no policy or diffusion in the loop. Used to
+pre-encode stage-1 collection shards for the value/reward model. Reads uint8 frames of shape
+(...,224,224,3) from an npz, encodes them with exactly the same preprocessing + `encode_frames`
+call `closed_loop` uses for its real context frames (see `encode_context_frames`, shared by both),
+and writes back `latents` (...,4,32,32) float16 plus scalar metadata (seed, vae precision, scaling
+factor, img_size). The torch RNG is seeded once before encoding so `posterior.sample()` is
+reproducible.
+
 Run:
     NW=~/miniconda3/envs/nanowm/bin/python
     P=examples/nanowm_pusht_aug
@@ -44,6 +52,8 @@ Run:
 
     export DATASET_DIR=~/Downloads/bmw48-osfstorage-datasets-archive
     $NW $P/imagined_rollout.py open-loop --num-samples 300 --out $P/imagined/smoke
+
+    $NW $P/imagined_rollout.py encode --in shard_0.npz --out latents_0.npz --key frames_224
 """
 
 from __future__ import annotations
@@ -102,19 +112,26 @@ def pd_replay_agent(pos0: np.ndarray, vel0: np.ndarray, rel_px: np.ndarray) -> n
     return out
 
 
-def load_nanowm(device: str):
+def load_vae(device: str):
+    """Load just the cfg + SD-VAE (decoder), no NanoWM model or diffusion -- for encode-only use
+    (`encode` subcommand), where the full model is unneeded weight. `load_nanowm` calls this so
+    `img_size` / `vae_precision` always come from the same cfg source in both paths."""
     cfg = OmegaConf.load(NANOWM_ROOT / "ckpt" / "config.yaml")
     cfg.model.latent_size = get_model_latent_size(cfg)
+    codec_cfg = resolve_latent_codec_config(cfg)
+    assert codec_cfg.has_decoder, "need SD-VAE (decoder) checkpoint"
+    vae = load_autoencoder_kl(codec_cfg.model_path).to(device).eval()
+    return cfg, vae
+
+
+def load_nanowm(device: str):
+    cfg, vae = load_vae(device)
     model = get_models(cfg).to(device)
     sd = find_model(str(NANOWM_ROOT / "ckpt" / "model.pt"))
     sd = sd.get("model", sd)
     sd = {k[6:] if k.startswith("model.") else k: v for k, v in sd.items()}
     model.load_state_dict(sd)
     model.eval()
-
-    codec_cfg = resolve_latent_codec_config(cfg)
-    assert codec_cfg.has_decoder, "need SD-VAE (decoder) checkpoint"
-    vae = load_autoencoder_kl(codec_cfg.model_path).to(device).eval()
 
     diffusion = create_diffusion(
         timestep_respacing=str(cfg.model.num_sampling_steps),
@@ -125,6 +142,31 @@ def load_nanowm(device: str):
         zero_terminal_snr=cfg.experiment.diffusion.zero_terminal_snr,
     )
     return cfg, model, vae, diffusion
+
+
+def encode_context_frames(
+    frames_224: np.ndarray, vae, dev: str, img_size: int, vae_prec: str, wm_batch: int
+) -> torch.Tensor:
+    """Preprocess + SD-VAE encode real 224x224 context frames.
+
+    Byte-for-byte the path `closed_loop` uses for its real context frames: /255, stretch-resize
+    to (img_size, img_size), scale to [-1, 1], then `encode_frames` in `wm_batch` sub-batches
+    (GPU memory). Shared by `closed_loop` (its `seeds_expanded.npz` context) and the `encode`
+    subcommand, so the two paths can never silently diverge.
+
+    Args:
+        frames_224: (N, Hs, 224, 224, 3) uint8.
+    Returns:
+        latents on `dev`, (N, Hs, Cz, Sz, Sz) float32.
+    """
+    n, hs = frames_224.shape[0], frames_224.shape[1]
+    f = torch.from_numpy(frames_224).float().permute(0, 1, 4, 2, 3).div(255.0)  # (n,hs,3,224,224)
+    f = resize_frames(f.reshape(n * hs, 3, 224, 224), (img_size, img_size), "stretch")
+    f = (f * 2.0 - 1.0).reshape(n, hs, 3, img_size, img_size)
+    lat_parts = []
+    for i in range(0, n, wm_batch):
+        lat_parts.append(encode_frames(vae, f[i : i + wm_batch].to(dev), dev, vae_precision=vae_prec).cpu())
+    return torch.cat(lat_parts, dim=0).to(dev)  # (n,hs,Cz,Sz,Sz)
 
 
 def _wait(path: Path, timeout: float = 1200.0) -> bool:
@@ -167,15 +209,7 @@ def closed_loop(args) -> None:
     bs = len(seed_frames)
     if multi:  # (bs,Hs,224,224,3) real context frames
         Hs = seed_frames.shape[1]
-        f = torch.from_numpy(seed_frames).float().permute(0, 1, 4, 2, 3).div(255.0)  # (bs,Hs,3,224,224)
-        f = resize_frames(f.reshape(bs * Hs, 3, 224, 224), (img_size, img_size), "stretch")
-        f = (f * 2.0 - 1.0).reshape(bs, Hs, 3, img_size, img_size)
-        lat_parts = []
-        for i in range(0, bs, args.wm_batch):
-            lat_parts.append(
-                encode_frames(vae, f[i : i + args.wm_batch].to(dev), dev, vae_precision=vae_prec).cpu()
-            )
-        gen_lat = torch.cat(lat_parts, dim=0).to(dev)  # (bs,Hs,Cz,Sz,Sz)
+        gen_lat = encode_context_frames(seed_frames, vae, dev, img_size, vae_prec, args.wm_batch)
         if Hs < H:
             raise SystemExit(
                 f"[wm] got {Hs} context frames, need {H}. Padding by repeating frame 0 would "
@@ -235,6 +269,10 @@ def closed_loop(args) -> None:
         _save_atomic(work / f"frames_{r + 1}.npz", frames=rgb, cov=cov, cov_raw=cov_raw)
         print(f"[wm] round {r} -> frames_{r + 1}  cov mean={cov.mean():.3f} max={cov.max():.3f}", flush=True)
 
+    if args.save_latents:
+        # (bs, H + rounds, Cz, Sz, Sz): H real context latents then one generated latent per round
+        _save_atomic(work / "latents.npz", latents=gen_lat.half().cpu().numpy())
+        print(f"[wm] saved latents {tuple(gen_lat.shape)} f16 -> latents.npz", flush=True)
     print("[wm] done", flush=True)
 
 
@@ -398,6 +436,48 @@ def open_loop(args) -> None:
     print(f"\nDone. {done} episodes across {shard_idx} shard(s) -> {args.out}")
 
 
+def encode(args) -> None:
+    """Offline batch SD-VAE encode: npz frames_224 (...,224,224,3) u8 -> latents (...,4,32,32) f16.
+
+    Uses `load_vae` (not the full `load_nanowm`) and `encode_context_frames` -- exactly the path
+    `closed_loop` uses for its real context frames -- so `img_size` / `vae_precision` come from the
+    same cfg source and the two paths can never silently diverge.
+    """
+    dev = args.device
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+
+    cfg, vae = load_vae(dev)
+    img_size = int(cfg.model.image_size)
+    vae_prec = cfg.experiment.infra.vae_precision
+
+    d = np.load(args.inp)
+    frames = d[args.key]
+    if frames.shape[-3:] != (224, 224, 3):
+        raise SystemExit(f"[encode] expected (...,224,224,3), got {frames.shape} for key {args.key!r}")
+    lead_shape = frames.shape[:-3]
+    flat = frames.reshape((-1,) + frames.shape[-3:])[:, None]  # (N,1,224,224,3)
+
+    t0 = time.time()
+    lat = encode_context_frames(flat, vae, dev, img_size, vae_prec, args.batch)  # (N,1,Cz,Sz,Sz)
+    lat = lat[:, 0].half().cpu().numpy()  # (N,Cz,Sz,Sz)
+    dt = time.time() - t0
+    Cz, Sz = lat.shape[-3], lat.shape[-1]
+    lat = lat.reshape(lead_shape + (Cz, Sz, Sz))
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        args.out,
+        latents=lat,
+        seed=np.int64(args.seed),
+        vae_precision=str(vae_prec),
+        scaling_factor=np.float32(vae.config.scaling_factor),
+        img_size=np.int64(img_size),
+    )
+    print(f"[encode] {frames.shape} u8 -> {lat.shape} f16 in {dt:.2f}s -> {args.out}", flush=True)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     modes = p.add_subparsers(dest="mode", required=True)
@@ -409,6 +489,11 @@ def main() -> None:
     cl.add_argument("--num-sampling-steps", type=int, default=30)
     cl.add_argument("--wm-batch", type=int, default=24, help="branches per NanoWM forward (GPU memory)")
     cl.add_argument("--decode-chunk", type=int, default=16)
+    cl.add_argument(
+        "--save-latents",
+        action="store_true",
+        help="after the last round write work/latents.npz (bs,H+rounds,Cz,Sz,Sz) f16 (value-model stage 2)",
+    )
     cl.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     cl.set_defaults(fn=closed_loop)
 
@@ -430,6 +515,15 @@ def main() -> None:
     ol.add_argument("--shard-every", type=int, default=100, help="flush a shard_*.npz every N episodes")
     ol.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ol.set_defaults(fn=open_loop)
+
+    ec = modes.add_parser("encode", help="offline batch SD-VAE encode of npz frames_224 -> latents")
+    ec.add_argument("--in", dest="inp", type=Path, required=True, help="input npz holding `--key`")
+    ec.add_argument("--out", type=Path, required=True, help="output npz (latents + metadata)")
+    ec.add_argument("--key", default="frames_224", help="npz key holding (...,224,224,3) u8 frames")
+    ec.add_argument("--batch", type=int, default=64, help="frames per VAE encode sub-batch (GPU memory)")
+    ec.add_argument("--seed", type=int, default=0, help="torch RNG seed for reproducible posterior.sample()")
+    ec.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ec.set_defaults(fn=encode)
 
     args = p.parse_args()
     torch.set_grad_enabled(False)

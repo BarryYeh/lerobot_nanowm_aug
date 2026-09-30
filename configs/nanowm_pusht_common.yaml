@@ -85,3 +85,6 @@ seed_namespace:
   cupid_topband_pool: 600000   # cupid_select_topband: pool / test / eval band starts
   cupid_topband_test: 610000
   cupid_topband_eval: 620000
+  value_stage1_band: 700000    # value_model_topband stage 1: top-wall-band episode starts
+  value_stage1_reset: 710000   # value_model_topband stage 1: random-reset episode starts
+  value_stage2_anchor: 720000  # value_model_topband stage 2: imagined-branch anchor starts

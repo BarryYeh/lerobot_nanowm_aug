@@ -155,6 +155,14 @@ def main() -> None:
     p.add_argument("--max-z", type=float, default=3.0, help="cap on |relative action| in sigma units")
     p.add_argument("--noise-hold", type=int, default=5, help="steps each noise draw is held")
     p.add_argument("--noise-seed", type=int, default=0)
+    p.add_argument(
+        "--save-latents",
+        action="store_true",
+        help="value-model stage 2: ask the worker for its NanoWM latents and store per-branch `latents` "
+        "(H+h_max,4,32,32) f16, `lead_acts` (lead,2), `seed_index` (row in --seeds, i.e. the "
+        "reset(seed=9000+i) index) and `agent_state_hist` (h_max+1,4) = PD-tracked [pos,vel] at stream "
+        "index lead + r*fi (r=0..h_max) in every saved branch npz",
+    )
     p.add_argument("--work", type=Path, default=Path("examples/nanowm_pusht_aug/cl/work_cl_aligned"))
     p.add_argument("--out", type=Path, default=Path("examples/nanowm_pusht_aug/cl/accepted_aligned"))
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -259,6 +267,7 @@ def main() -> None:
     stop = work / "stop"
     wlog = open(work / "wm_worker.log", "w")  # noqa: SIM115 -- subprocess stdout, closed below
     wenv = {**os.environ, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
+    extra_worker_args = ["--save-latents"] if args.save_latents else []
     proc = subprocess.Popen(
         [
             str(NANOWM_PY),
@@ -274,6 +283,7 @@ def main() -> None:
             str(args.num_sampling_steps),
             "--wm-batch",
             str(args.wm_batch),
+            *extra_worker_args,
         ],
         stdout=wlog,
         stderr=subprocess.STDOUT,
@@ -291,6 +301,9 @@ def main() -> None:
     cov_raw_hist = np.zeros((bs, args.h_max), np.float32)
     frames_hist = np.zeros((bs, args.h_max, 224, 224, 3), np.uint8)
     exec_stream = np.zeros((bs, args.h_max * fi, 2), np.float64)
+    # PD-tracked [pos, vel] at stream index lead + r*fi; entry 0 is the (real) anchor state
+    agent_state_hist = np.zeros((bs, args.h_max + 1, 4), np.float64)
+    agent_state_hist[:, 0] = np.concatenate([pos, vel], axis=1)
     try:
         for r in range(args.h_max):
             # k independent chunks only at round 0; afterwards each branch re-plans on its own frame
@@ -336,6 +349,7 @@ def main() -> None:
                     newpos[b, t], newvel[b, t] = pp, vv
                     pp, vv = ac.pd_step(pp, vv, ex[b, t])
                 pos[b], vel[b] = pp, vv
+            agent_state_hist[:, r + 1] = np.concatenate([pos, vel], axis=1)
             stream = np.concatenate([stream, ex], 1)
             apos = np.concatenate([apos, newpos], 1)
             avel = np.concatenate([avel, newvel], 1)
@@ -350,6 +364,11 @@ def main() -> None:
             except subprocess.TimeoutExpired:
                 proc.kill()
         wlog.close()
+
+    latents = None
+    if args.save_latents:
+        latents = np.load(work / "latents.npz")["latents"]  # (bs, H+h_max, 4, 32, 32) f16
+        assert latents.shape[:2] == (bs, H + args.h_max), latents.shape
 
     term = cov_hist[:, -1]
     peak = cov_hist.max(1)
@@ -371,6 +390,14 @@ def main() -> None:
 
     n = 0
     for b in np.nonzero(acc)[0]:
+        extra = {}
+        if latents is not None:
+            extra = {
+                "latents": latents[b],
+                "lead_acts": lead_acts[sid[b]],
+                "seed_index": np.int64(sid[b]),
+                "agent_state_hist": agent_state_hist[b],
+            }
         np.savez(
             out / f"seed{sid[b]:04d}_cand{cand[b]}.npz",
             frames=frames_hist[b],
@@ -382,6 +409,7 @@ def main() -> None:
             meta=np.array([k, args.h_max, args.num_sampling_steps], np.int32),
             anchor_frame=ctx[sid[b], H - 1],  # REAL 224px frame at the anchor (exec stream index 0)
             inject_sigma=np.float32(args.inject_sigma),
+            **extra,
         )
         n += 1
     np.savez(
