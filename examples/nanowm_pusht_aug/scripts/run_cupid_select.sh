@@ -84,8 +84,21 @@ for stage in $STAGES; do
     featurize) $PY $A/featurize.py --config "$CFG" ;;
     score)
       uv run --extra training --with matplotlib python $A/score_pairs.py --config "$CFG"
-      RHO=$(python3 -c "import json;d=json.load(open('$OUT/score_summary.json'));print(d.get('spearman_features_vs_features_r1', float('nan')))")
-      R_AVG=$(python3 -c "print(2*$RHO/(1+$RHO)) if '$RHO'!='nan' else print('nan')")
+      read -r RHO R_AVG < <(uv run --no-sync python - "$OUT/score_summary.json" <<'PY'
+import json, math, sys
+from pathlib import Path
+d = json.load(open(sys.argv[1]))
+rho = d.get("spearman_features_vs_features_r1", float("nan"))
+if isinstance(rho, float) and math.isnan(rho):
+    r_avg = float("nan")
+else:
+    try:
+        r_avg = 2 * rho / (1 + rho)
+    except (TypeError, ZeroDivisionError):
+        r_avg = float("nan")
+print(rho, r_avg)
+PY
+)
       echo "$R_AVG" > "$OUT/gate_r_avg.txt"
       echo "gate: single-replicate rho=$RHO  2-replicate mean reliability=$R_AVG (threshold 0.8; NOT blocking here)"
       ;;
