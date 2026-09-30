@@ -408,7 +408,10 @@ def main() -> None:
         f"-> {args.repo_id}"
     )
     print(f"  {n_ep * EL} frames, episode length {EL}, fps {args.fps}, {n_clip} actions clipped to range")
-    print(f"  dropped {n_skip} pairs whose action chunk never reaches cov >= {args.pair_cov}")
+    print(
+        f"  dropped {n_skip} pairs (never crosses --truncate-cov, outside --frame-window, "
+        f"excluded by --frame-select, or below --pair-cov {args.pair_cov})"
+    )
     print(f"  root: {root}")
     print(f"\n  TRAIN WITH  --policy.drop_n_last_frames={EL - 1}  (both the real-only and real+aug arms)")
 

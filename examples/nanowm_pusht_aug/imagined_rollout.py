@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""NanoWM imagined-rollout generation -- both modes live here.
+"""NanoWM imagined-rollout generation -- all three modes (closed-loop, open-loop, encode) live here.
 
 Runs in the `nanowm` venv (`uv sync` in third_party/nano-world-model: Python 3.11, torch 2.7.1 /
 diffusers 0.29.2; it cannot share the lerobot venv, which needs Python >= 3.12), so this file must
@@ -214,7 +214,9 @@ def closed_loop(args) -> None:
     if not _wait(work / "seeds_expanded.npz"):
         print("[wm] stop before seeds", flush=True)
         return
-    seed_frames = np.load(work / "seeds_expanded.npz")["frames_224"]  # (bs,224,224,3) or (bs,H,224,224,3) u8
+    seed_frames = np.load(work / "seeds_expanded.npz")[
+        "frames_224"
+    ]  # only (bs,H,224,224,3) accepted; single-frame refused below
     multi = seed_frames.ndim == 5
     bs = len(seed_frames)
     if multi:  # (bs,Hs,224,224,3) real context frames

@@ -10,7 +10,7 @@
 # branch must BOTH cross 0.95 in the real simulator (47.5% pass) and leave >=9 pre-crossing
 # actions. 500 Verified pairs therefore needs ~7,082 branches total.
 set -euo pipefail
-# repo root -- derived from this script's own location (examples/nanowm_pusht_aug/eval/)
+# repo root -- derived from this script's own location (examples/nanowm_pusht_aug/scripts/)
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 CKPT=outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model

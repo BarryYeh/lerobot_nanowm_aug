@@ -12,7 +12,7 @@
 #          200 episodes, which cannot resolve the 5 pp effects being chased. 1000 episodes gives
 #          ~+-3 pp. Re-evaluate the decisive arms at both inference cadences.
 set -euo pipefail
-# repo root -- derived from this script's own location (examples/nanowm_pusht_aug/eval/)
+# repo root -- derived from this script's own location (examples/nanowm_pusht_aug/scripts/)
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 P=examples/nanowm_pusht_aug

@@ -21,10 +21,10 @@ own target; calibration replay = feed targets straight to gym_pusht) no pd_step 
 Pure numpy, no torch / no repo imports -> loads in either venv.
 
 Sources:
-  nano-world-model/src/environments/pusht/pusht_env.py:487-497  (env.step, relative)
-  .venv/.../gym_pusht/envs/pusht.py:241-253                     (env.step, absolute)
-  examples/nanowm_pusht_aug/imagined_rollout.py:78-84            (pd_replay_agent)
-  examples/nanowm_pusht_aug/imagined_rollout.py:216-222          (dfot action window)
+  nano-world-model pusht_env.step (relative action)
+  gym_pusht PushTEnv.step (absolute action)
+  imagined_rollout.py pd_replay_agent
+  imagined_rollout.py closed_loop action window
 """
 
 from __future__ import annotations

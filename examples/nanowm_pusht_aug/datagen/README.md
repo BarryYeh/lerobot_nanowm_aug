@@ -42,7 +42,9 @@ uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.p
 | `pushtnoise-denoise` | `convert_pushtnoise_denoise.py` | `pusht_noise` train → `local/pushtnoise_clean185_imgonly` (185 min-residual denoised demos) |
 | `imagined`           | `pack_imagined.py`              | `imagined_rollout.py` `.npz` shards → `local/pusht_noise_224_imgonly_nanoWM_fi5`             |
 
-Each converter module also runs standalone (`python datagen/convert_pusht_imgonly.py …`).
+Converters use relative imports, so invoke them via the registry or as a module:
+`uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.py <name> --help`,
+or `cd examples/nanowm_pusht_aug && uv run --no-sync python -m datagen.convert_pusht_imgonly --help`.
 
 `pack_closed_loop.py` is deliberately **not** in that registry: it packs accepted
 closed-loop rollouts with a different episode layout (one 10-frame episode per

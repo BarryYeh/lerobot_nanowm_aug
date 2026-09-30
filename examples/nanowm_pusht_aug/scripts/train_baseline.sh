@@ -52,4 +52,4 @@ uv run --extra training lerobot-train \
 
 # Eval (2 Hz control loop, native 224 render):
 #   uv run --extra training python examples/nanowm_pusht_aug/eval/eval_baseline.py \
-#     "$OUT/checkpoints/last/pretrained_model" --n-episodes 100 --seed "$SEED"
+#     "$OUT/checkpoints/last/pretrained_model" --random-inits 100 --seed "$SEED" --out <json>
