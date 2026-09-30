@@ -13,15 +13,19 @@ CROSS_VENV_MODULES = [
     "datagen.action_convert",
     "datagen.coverage_from_frame",
     "critic.value_model",
+    "datagen.provenance",
+    "config_io",
 ]
 
 
 def _blocked_import(py: str, mod: str) -> subprocess.CompletedProcess[str]:
+    # attribution.config_io lives under attribution/; put both PROJ and attribution on path
     code = (
         "import sys; "
         "sys.modules['lerobot']=None; "
         "sys.modules['gym_pusht']=None; "
         f"sys.path.insert(0, {str(PROJ)!r}); "
+        f"sys.path.insert(0, {str(PROJ / 'attribution')!r}); "
         f"import {mod}"
     )
     return subprocess.run(

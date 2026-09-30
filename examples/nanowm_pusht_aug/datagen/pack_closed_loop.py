@@ -397,10 +397,27 @@ def main() -> None:
         verify_existing_pack(root, args.repo_id, pairs, args.accepted, fi)
     else:
         ds.finalize()
-    (root / "meta" / "pair_index.json").write_text(
-        json.dumps({"accepted": str(args.accepted), "pairs": pairs}, indent=1)
+    idx_path = root / "meta" / "pair_index.json"
+    history = []
+    if idx_path.exists():
+        try:
+            prev = json.loads(idx_path.read_text())
+            history = list(prev.get("provenance", []))
+        except Exception:  # noqa: BLE001
+            history = []
+    from datagen.provenance import provenance_entry  # noqa: E402
+
+    history.append(
+        provenance_entry(
+            args,
+            mode="index-only" if args.index_only else "pack",
+            n_pairs=len(pairs),
+        )
     )
-    print(f"pair index: {len(pairs)} episodes -> {root / 'meta' / 'pair_index.json'}")
+    idx_path.write_text(
+        json.dumps({"accepted": str(args.accepted), "pairs": pairs, "provenance": history}, indent=1)
+    )
+    print(f"pair index: {len(pairs)} episodes -> {idx_path}")
     if args.index_only:
         return
 
