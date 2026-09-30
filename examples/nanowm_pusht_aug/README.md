@@ -176,8 +176,8 @@ only target that makes the PD controller stop; `zero` is a target at the top-lef
 `copy` keeps pushing). The auto-pad of L10–L15 then copies L9, which is already the hold
 value, so all 16 slots are consistent.
 
-**`drop` must match on both arms.** `scripts/finetune_cl.sh <arm> [seed] [steps] [drop]` defaults
-to `drop=9`; Control has to be trained at the same value as the augmented arm. Datasets packed
+**`drop` must match on both arms.** `scripts/finetune_cl.sh <arm> [seed] [steps] <drop>` requires
+`drop`; Control has to be trained at the same value as the augmented arm. Datasets packed
 with `--ep-len 9` (`run_dose464.sh`, `run_dose500.sh`) pass `drop=8` explicitly.
 
 ```bash
@@ -185,8 +185,8 @@ uv run --extra training python examples/nanowm_pusht_aug/datagen/pack_closed_loo
     --accepted examples/nanowm_pusht_aug/cl/pool500 --repo-id local/pusht_cl_allpre_h10 \
     --truncate-cov 0.95 --frame-select all --max-pairs 464 --overwrite
 # aggregate with local/pusht_imgonly (pin stats to the real set), then:
-bash examples/nanowm_pusht_aug/scripts/finetune_cl.sh allpre_h 1000 20000   # drop=9
-bash examples/nanowm_pusht_aug/scripts/finetune_cl.sh a        1000 20000   # Control, drop=9
+bash examples/nanowm_pusht_aug/scripts/finetune_cl.sh allpre_h 1000 20000 9
+bash examples/nanowm_pusht_aug/scripts/finetune_cl.sh a        1000 20000 9
 ```
 
 ## Next steps

@@ -8,7 +8,7 @@ audited in `../eval/README.md`; the shared values live in `configs/nanowm_pusht_
 
 | script                                                         | what                                                                                                                                                |
 | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `finetune_cl.sh <arm\|repo=<id>> [seed] [steps] [drop]`        | fine-tune one arm from `ckpt.base`. `repo=local/<id>` takes any dataset; `SAVE_FREQ=20000` keeps only the final checkpoint (~2 GB instead of ~6 GB) |
+| `finetune_cl.sh <arm\|repo=<id>> [seed] [steps] <drop>`        | fine-tune one arm from `ckpt.base`. `repo=local/<id>` takes any dataset; `SAVE_FREQ=20000` keeps only the final checkpoint (~2 GB instead of ~6 GB) |
 | `proto_eval_pusht.sh <ckpt> <out> [n] [seed] [n_action_steps]` | `lerobot-eval` on gym_pusht at fps 10. Omitting `n_action_steps` keeps the checkpoint's own                                                         |
 | `proto_train_pusht.sh [n_obs] [seed]`                          | train from scratch on `local/pusht_imgonly`                                                                                                         |
 | `proto_train_pushtnoise.sh [seed]`                             | train from scratch on `local/pushtnoise_clean185_imgonly`                                                                                           |

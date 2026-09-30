@@ -5,7 +5,7 @@
 #   any dataset       : bash finetune_cl.sh repo=local/<repo_id>   (tag = repo id minus 'local/')
 # SAVE_FREQ (env, default 10000): 20000 keeps only the final checkpoint (~2 GB instead of ~6 GB).
 # BOTH arms are identical except for the dataset: same pretrained checkpoint, same seed,
-# same LR, same steps, and the same drop_n_last_frames (4th arg, default 9). drop MUST equal
+# same LR, same steps, and the same drop_n_last_frames (4th arg, REQUIRED). drop MUST equal
 # the packer's --ep-len minus 1 so each imagined episode yields exactly ONE sample: default
 # ep-len 10 -> drop 9 (-0.9% real samples vs the baseline's 8). Pass 8 for ep-len-9 datasets.
 # (The earlier 16-frame layout forced drop=15, which silently stripped the 1442 highest-coverage
@@ -13,10 +13,11 @@
 # The aggregate's normalization stats were pinned to the real-only set, so VISUAL MEAN_STD
 # normalization is identical in both arms as well.
 set -euo pipefail
-ARM="${1:?usage: finetune_cl.sh a-or-b}"
+ARM="${1:?usage: finetune_cl.sh <arm|repo=local/<id>> <seed> <steps> <drop>  (drop = pack --ep-len minus 1)}"
 SEED="${2:-1000}"
 STEPS="${3:-20000}"
-DROP="${4:-9}"
+DROP="${4:?usage: finetune_cl.sh <arm|repo=local/<id>> <seed> <steps> <drop>  (drop = pack --ep-len minus 1)}"
+[[ "$DROP" =~ ^[0-9]+$ ]] || { echo "drop must be a non-negative integer"; exit 1; }
 CKPT=outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model
 case "$ARM" in
   a) REPO_ID=local/pusht_imgonly;         TAG=a_real_only ;;
