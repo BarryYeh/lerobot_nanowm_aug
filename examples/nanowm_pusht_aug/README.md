@@ -176,9 +176,10 @@ only target that makes the PD controller stop; `zero` is a target at the top-lef
 `copy` keeps pushing). The auto-pad of L10–L15 then copies L9, which is already the hold
 value, so all 16 slots are consistent.
 
-**`drop` must match on both arms.** `scripts/finetune_cl.sh <arm> [seed] [steps] <drop>` requires
+**`drop` must match on both arms.** `scripts/finetune_cl.sh <arm|repo=local/<id>> <seed> <steps> <drop>` requires
 `drop`; Control has to be trained at the same value as the augmented arm. Datasets packed
-with `--ep-len 9` (`run_dose464.sh`, `run_dose500.sh`) pass `drop=8` explicitly.
+with `--ep-len 9` (`run_dose464.sh`, `run_dose500.sh`) pass `drop=8` explicitly. All four
+arguments are positional, so seed and steps must be given too.
 
 ```bash
 uv run --extra training python examples/nanowm_pusht_aug/datagen/pack_closed_loop.py \

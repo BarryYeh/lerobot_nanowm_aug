@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fine-tune one arm of the closed-loop augmentation comparison.
-#   arm A (real-only) : bash finetune_cl.sh a
-#   arm B (real+aug)  : bash finetune_cl.sh b
-#   any dataset       : bash finetune_cl.sh repo=local/<repo_id>   (tag = repo id minus 'local/')
+#   arm A (real-only) : bash finetune_cl.sh a 1000 20000 9
+#   arm B (real+aug)  : bash finetune_cl.sh b 1000 20000 9
+#   any dataset       : bash finetune_cl.sh repo=local/<repo_id> 1000 20000 <drop>   (tag = repo id minus 'local/')
 # SAVE_FREQ (env, default 10000): 20000 keeps only the final checkpoint (~2 GB instead of ~6 GB).
 # BOTH arms are identical except for the dataset: same pretrained checkpoint, same seed,
 # same LR, same steps, and the same drop_n_last_frames (4th arg, REQUIRED). drop MUST equal
