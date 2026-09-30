@@ -23,7 +23,7 @@ P=examples/nanowm_pusht_aug
 uv run --extra training python -c "
 from pathlib import Path; from lerobot.datasets.aggregate import aggregate_datasets
 import shutil, json
-H=Path.home()/'.cache/huggingface/lerobot'
+from lerobot.utils.constants import HF_LEROBOT_HOME as H
 real=json.load(open(H/'local/pusht_imgonly/meta/stats.json'))
 for aug,out in (('local/pusht_cl_untrimmed_h10','local/pusht_plus_untrimmed_h10'),
                 ('local/pusht_cl_allpre_h10','local/pusht_plus_allpre_h10')):

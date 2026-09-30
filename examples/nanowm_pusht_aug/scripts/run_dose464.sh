@@ -22,7 +22,7 @@ echo '=== PACK464 DONE ==='
 uv run --extra training python -c "
 from pathlib import Path; from lerobot.datasets.aggregate import aggregate_datasets
 import shutil, json
-H=Path.home()/'.cache/huggingface/lerobot'
+from lerobot.utils.constants import HF_LEROBOT_HOME as H
 real=json.load(open(H/'local/pusht_imgonly/meta/stats.json'))
 for aug,out_id in (('local/pusht_cl_untrimmed464','local/pusht_plus_untrimmed464'),
                    ('local/pusht_cl_trimmed464','local/pusht_plus_trimmed464'),

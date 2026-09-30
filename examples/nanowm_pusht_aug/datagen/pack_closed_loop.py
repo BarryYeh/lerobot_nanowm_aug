@@ -70,6 +70,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812 -- the conventional torch alias
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.utils.constants import HF_LEROBOT_HOME
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datagen import action_convert as _ac  # noqa: E402
@@ -138,7 +139,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--accepted", type=Path, required=True)
     p.add_argument("--repo-id", default="local/pusht_imgonly_cl_aug")
-    p.add_argument("--root", type=Path, default=None)
+    p.add_argument("--root", type=Path, default=None, help="default: $HF_LEROBOT_HOME/<repo-id>")
     p.add_argument("--fps", type=int, default=10)
     p.add_argument("--fi", type=int, default=5)
     p.add_argument("--horizon", type=int, default=16, help="policy horizon (actions the chunk spans)")
@@ -272,7 +273,7 @@ def main() -> None:
     if not files:
         raise SystemExit(f"no accepted rollouts in {args.accepted}")
 
-    root = args.root or Path.home() / ".cache/huggingface/lerobot" / args.repo_id
+    root = args.root or HF_LEROBOT_HOME / args.repo_id
     if args.index_only:
         if not root.exists():
             raise SystemExit(f"--index-only needs an existing pack at {root}")

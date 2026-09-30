@@ -76,7 +76,7 @@ for stage in $STAGES; do
       echo "merged $(ls "$MERGED" | wc -l) branches -> $MERGED"
       ;;
     pack)
-      rm -rf "$HOME/.cache/huggingface/lerobot/$POOL_REPO"
+      rm -rf "${HF_LEROBOT_HOME:-$HOME/.cache/huggingface/lerobot}/$POOL_REPO"
       $PY $D/pack_closed_loop.py --accepted "$RAW/merged" --repo-id "$POOL_REPO" \
         --pair-cov 0.0 --ep-len "$(y pack.ep_len)" --include-anchor --overwrite
       ;;
