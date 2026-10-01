@@ -85,6 +85,58 @@ def chunks_active(t: int, done, sigma, perturb_p, mode: str) -> list[int]:
     return [int(i) for i in np.nonzero((~done) & (sigma > 0) & hit)[0]]
 
 
+PERTURB_SWITCHES = ("random", "all")
+QUERY_KEEPS = ("all", "after_switch")
+
+
+def draw_perturbations(pr: dict, n: int, episode_steps: int) -> tuple[np.ndarray, np.ndarray]:
+    """(sigma (n,), perturb_p (n,)) drawn once, in episode order, from a single rng seeded by
+    `pr["seed"]` -- independent of how the episodes are later chunked into batches / shards.
+
+    `pr["switch"]` (default `"random"`):
+      * `random`: `perturb_p` uniform over {0, 10, ..., 100} per episode (the legacy / pre-registered
+        primary design);
+      * `all`:    `perturb_p[:] = episode_steps` (every chunk of every episode is noised; needs
+        `mode: prefix`, a `point` mode would never fire).
+    The p draw is ALWAYS consumed so the rng stream (hence `sigma`) is identical for both switches."""
+    switch = pr.get("switch", "random")
+    if switch not in PERTURB_SWITCHES:
+        raise ValueError(f"perturb.switch must be one of {PERTURB_SWITCHES}, got {switch!r}")
+    if switch == "all" and pr.get("mode", "point") != "prefix":
+        raise ValueError("perturb.switch='all' requires perturb.mode='prefix'")
+    rng = np.random.default_rng(pr["seed"])
+    sigmas = np.asarray(pr["sigmas"], np.float64)
+    probs = np.asarray(pr["probs"], np.float64)
+    sigma = rng.choice(sigmas, size=n, p=probs)
+    perturb_p = rng.choice(np.arange(0, 101, 10), size=n)
+    if switch == "all":
+        perturb_p = np.full(n, int(episode_steps), np.int64)
+    return sigma, perturb_p
+
+
+def pick_anchor(success_step, wall_artifact, t_choices, perturb_p, sigma, rng, query_keep="after_switch"):
+    """Stage-2 anchor time for ONE source episode, or `None` if the episode is not usable.
+
+    Always consumes exactly one draw from `rng` (so the stream does not depend on which episodes
+    are usable): `t` uniform over `t_choices`. The episode is rejected if it has a sim wall artifact,
+    if it had already succeeded by `t` (`0 <= success_step <= t`; a state at/after success is not a
+    decision point) or if the stage-1 query rule drops the query: `query_keep="after_switch"` (default)
+    applies `keep_query(t, perturb_p, sigma)`, `query_keep="all"` (noise-everywhere backup) applies no
+    rule -- NOTE `keep_query` is NOT vacuous for `perturb_p = episode_steps`, it would drop every
+    query, which is why the rule is selected by `stage1.query_keep` and not inferred."""
+    if query_keep not in QUERY_KEEPS:
+        raise ValueError(f"query_keep must be one of {QUERY_KEEPS}, got {query_keep!r}")
+    t = int(rng.choice(np.asarray(t_choices)))
+    if bool(wall_artifact):
+        return None
+    s = int(success_step)
+    if s != -1 and s <= t:
+        return None
+    if query_keep == "after_switch" and not bool(keep_query(t, perturb_p, sigma)):
+        return None
+    return t
+
+
 def forward_fill_cov(cov: np.ndarray, last_step) -> np.ndarray:
     """Forward-fill `cov` (nb, L) per row: entries after column `last_step[i]` (the last step that
     was actually executed / recorded for env i) are set to `cov[i, last_step[i]]`. Returns a copy."""
