@@ -172,6 +172,18 @@ def assert_shared_lead_in(first: dict, br: dict, name: str) -> None:
         assert np.array_equal(a, b), f"{name}: {key} differs from {first['name']} (same seed_index)"
 
 
+PAIRED_CHUNK_TOL_PX = 1e-3
+
+
+def assert_paired_candidate(first: dict, br: dict, name: str) -> None:
+    """Candidate j of every sigma run is the SAME round-0 base chunk (pre-reg §9 T1, Table C): the
+    un-noised round-0 chunks (`chunk0_clean`) of one (seed_index, cand) agree across sigma runs."""
+    diff = float(np.abs(first["chunk0_clean"] - br["chunk0_clean"]).max())
+    assert diff <= PAIRED_CHUNK_TOL_PX, (
+        f"{name}: chunk0_clean differs from {first['name']} by {diff:.3e} px (same seed_index / cand)"
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--config", type=Path, required=True)
@@ -226,7 +238,7 @@ def main() -> None:
     src_episode = sd["src_episode"].astype(np.int64) if "src_episode" in sd.files else None
 
     # ---- load branches (small keys only) + per-branch asserts ----
-    branches, first_of_seed = [], {}
+    branches, first_of_seed, first_of_cand = [], {}, {}
     for f in branch_files:
         d = np.load(f)
         # skip the big per-branch image arrays (`frames`, `anchor_frame`): ~1.4 MB/branch, unused here
@@ -256,6 +268,11 @@ def main() -> None:
                 assert_shared_lead_in(first_of_seed[sid], br, br["name"])
             else:
                 first_of_seed[sid] = br
+            key = (sid, int(f.stem.split("_cand")[1]))
+            if key in first_of_cand:
+                assert_paired_candidate(first_of_cand[key], br, br["name"])
+            else:
+                first_of_cand[key] = br
         branches.append(br)
     assert branches, "no branch left after --anchor-subset"
 
@@ -466,6 +483,9 @@ def main() -> None:
     )
     if expect_lead_na is not None:
         print(f"lead-in identity across branches of one anchor: OK ({len(first_of_seed)} anchors)")
+        print(
+            f"round-0 base chunk identity across sigma runs: OK ({len(first_of_cand)} (anchor, cand) pairs)"
+        )
     print(f"imagined cov vs worker frames_r.npz cov: {cov_cmp} compared, max |diff| {cov_max:.2e}")
     print(f"rows {n_rows}: y {y_.mean():.3f}, pre_success {pre_.sum()}, wall_artifact {wa_.sum()}")
     for r in rounds:
