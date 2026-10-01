@@ -677,7 +677,10 @@ def main() -> None:
         1000,
         "value",
     )
-    print(f"\n=== training OracleNet ensemble (K={cfg_model['ensemble']}) ===")
+    oracle_ctr = {**ctr, "max_epochs": ctr.get("oracle_max_epochs", ctr["max_epochs"])}
+    print(
+        f"\n=== training OracleNet ensemble (K={cfg_model['ensemble']}, max_epochs={oracle_ctr['max_epochs']}) ==="
+    )
     oracle_members, oracle_hist, oracle_aurocs = train_ensemble(
         OracleNet,
         oracle_kwargs,
@@ -689,7 +692,7 @@ def main() -> None:
         val_idx,
         ckey,
         cfg_model,
-        ctr,
+        oracle_ctr,
         device,
         2000,
         "oracle",

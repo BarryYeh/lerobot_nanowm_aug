@@ -78,7 +78,8 @@ encode: {batch: 64, seed: 0}
 model: {conv: [32, 64, 64], feat: 128, hidden: 256, ensemble: 5, bootstrap: true}
 
 train: {lr: 3.0e-4, wd: 1.0e-4, batch: 256, max_epochs: 40, patience: 5, mix_stage1: 0.5,
-        w_reward: 1.0, w_pose: 0.5, val_frac: 0.2, split_seed: 0}
+        w_reward: 1.0, w_pose: 0.5, val_frac: 0.2, split_seed: 0,
+        oracle_max_epochs: 300}   # T6 post-hoc: OracleNet hit max_epochs=40 still improving (sailor_v1.md section 9)
 
 gate: {diagnostic_only: true}   # G1/G2/G3/G5 reported without thresholds; G4/G6 keep their fixed rules
 
