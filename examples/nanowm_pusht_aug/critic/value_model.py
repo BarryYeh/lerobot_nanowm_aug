@@ -253,8 +253,8 @@ class ValueEnsemble:
 
 
 class OracleEnsemble:
-    """K OracleNet members + a shared Normalizer (same normalizer stats as the latent ensemble's
-    would-be Normalizer -- fit independently here on the same train split). Mirrors ValueEnsemble's
+    """K OracleNet members + a Normalizer SHARED with the ValueEnsemble (the one object fit on the fit
+    split by train_value_model; the oracle only uses its agent-state scales). Mirrors ValueEnsemble's
     API for the state-oracle baseline; not needed by the nanowm-side search."""
 
     net_cls = OracleNet

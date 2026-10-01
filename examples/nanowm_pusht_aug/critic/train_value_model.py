@@ -20,6 +20,12 @@ Three-way grouped split, seeded by `train.split_seed`, done SEPARATELY within ea
                                    against the very labels the gate later scores against.
   fit (the rest)                  bootstrap-resampled per ensemble member and trained on.
 
+Targets (SAILOR v1, sailor_v1.md section 3): V head = BCE with SOFT labels against `v_target`
+(= gamma^T * 1[T <= B], beta = 0) for stage-1 AND stage-2 rows (stage-1 shards carry `q_v_target`;
+legacy shards without it fall back to the hard label y); RM head regresses `cov` (the real simulator
+coverage, `sim_cov` for stage 2); gates still score the binary y. The "band" bucket may be empty
+(`stage1.band.n = 0`).
+
 Training rows: stage-2 wall_artifact rows are dropped from the loss (both the fit loss and the es
 loss used for early stopping), but kept in val_predictions.npz (flagged) so value_gate_report.py can
 still exclude them from gate metrics while leaving them inspectable. pre_success rows are NOT dropped
@@ -124,6 +130,12 @@ def _load_stage1(stage1_dir: Path) -> dict:
         "r",
         "sigma",
         "stage",
+        "v_target",
+        "T",
+        "T_succ",
+        "cov_end",
+        "anchor_id",
+        "cand",
     )
     cols = {k: [] for k in keys}
     for shard_path in shard_paths:
@@ -164,10 +176,25 @@ def _load_stage1(stage1_dir: Path) -> dict:
         cols["r"].append(np.full(n_q, -1, np.int64))
         cols["sigma"].append(np.array([sigma_by_ep[int(e)] for e in q_ep], np.float32))
         cols["stage"].append(np.full(n_q, 1, np.int8))
+        y_q = d["q_y"].astype(bool)
+        if (
+            "q_v_target" in d.files
+        ):  # T3+ shards: soft target gamma^T * 1[T <= B] (pre-registration section 3)
+            cols["v_target"].append(d["q_v_target"].astype(np.float32))
+            cols["T"].append(d["q_T"].astype(np.int64))
+            cols["T_succ"].append(d["q_T_succ"].astype(np.int64))
+            cols["cov_end"].append(d["q_cov_end"].astype(np.float32))
+        else:  # legacy shards: only the binary label exists -> hard target (documented in sailor_v1_t5_changes.md)
+            cols["v_target"].append(y_q.astype(np.float32))
+            cols["T"].append(np.full(n_q, -1, np.int64))
+            cols["T_succ"].append(np.full(n_q, -1, np.int64))
+            cols["cov_end"].append(np.full(n_q, np.nan, np.float32))
+        cols["anchor_id"].append(np.full(n_q, -1, np.int64))
+        cols["cand"].append(np.full(n_q, -1, np.int64))
     return {k: np.concatenate(v, axis=0) for k, v in cols.items()}
 
 
-def _load_stage2(labels_path: Path) -> dict:
+def load_stage2_rows(labels_path: Path) -> dict:
     assert labels_path.exists(), f"missing {labels_path} -- run the label stage before training"
     d = np.load(labels_path, allow_pickle=True)
     n = len(d["y"])
@@ -186,7 +213,16 @@ def _load_stage2(labels_path: Path) -> dict:
         "r": d["r"].astype(np.int64),
         "sigma": d["sigma"].astype(np.float32),
         "stage": np.full(n, 2, np.int8),
+        "v_target": d["v_target"].astype(np.float32),
+        "T": d["T"].astype(np.int64),
+        "T_succ": d["success_step"].astype(np.int64),  # steps from the query state (-1 = never within B)
+        "cov_end": d["cov_end"].astype(np.float32),
+        "anchor_id": d["seed_id"].astype(np.int64),
+        "cand": d["cand"].astype(np.int64),
     }
+
+
+_load_stage2 = load_stage2_rows  # back-compat alias
 
 
 def load_table(stage1_dir: Path, stage2_labels: Path) -> dict:
@@ -194,8 +230,9 @@ def load_table(stage1_dir: Path, stage2_labels: Path) -> dict:
     rows = {k: np.concatenate([s1[k], s2[k]], axis=0) for k in s1}
     fs = rows["frame_steps"]
     assert (np.diff(fs, axis=1) == 5).all(), "frame_steps spacing != 5 somewhere in the assembled table"
-    for k in ("agent_state", "cog_state", "cov"):
+    for k in ("agent_state", "cog_state", "cov", "v_target"):
         assert np.isfinite(rows[k]).all(), f"non-finite values in {k}"
+    assert ((rows["v_target"] >= 0) & (rows["v_target"] <= 1)).all(), "v_target outside [0, 1]"
     assert np.isfinite(rows["latent_stack"].astype(np.float32)).all(), "non-finite values in latent_stack"
     assert not (rows["wall_artifact"] & (rows["stage"] == 1)).any(), (
         "stage-1 rows must never be wall_artifact"
@@ -296,8 +333,11 @@ def compute_loss(
     w_pose: float,
     y_override: np.ndarray | None = None,
 ):
+    """V head: BCE with SOFT labels against `v_target` (= gamma^T * 1[T <= B], pre-registration section 3);
+    `y_override` (shuffled-label control, overfit test) replaces the whole target vector. RM head:
+    MSE(sigmoid(rm), cov) with cov the real simulator coverage."""
     v_logit, rm_logit, pose_pred = forward_net(net, normalizer, rows, idx, device)
-    y_np = rows["y"][idx] if y_override is None else y_override[idx]
+    y_np = rows["v_target"][idx] if y_override is None else y_override[idx]
     y = torch.as_tensor(y_np.astype(np.float32), device=device)
     cov = torch.as_tensor(rows["cov"][idx], dtype=torch.float32, device=device)
     bce = F.binary_cross_entropy_with_logits(v_logit, y)
@@ -458,6 +498,56 @@ def train_ensemble(
     return members, histories, val_aurocs
 
 
+PASSTHROUGH_FIELDS = (
+    "y",
+    "cov",
+    "v_target",
+    "T",
+    "T_succ",
+    "cov_end",
+    "anchor_id",
+    "cand",
+    "pre_success",
+    "wall_artifact",
+    "source",
+    "stage",
+    "r",
+    "sigma",
+    "seed_id",
+    "episode",
+    "cog_state",
+)
+
+
+@torch.no_grad()
+def predict_rows(ve: ValueEnsemble, oe: OracleEnsemble, rows: dict, idx: np.ndarray, device: str) -> dict:
+    """Ensemble predictions (+ labels / metadata) for `rows[idx]`; used for val_predictions.npz and, by
+    value_gate_report, for the G6 test anchors (same fields)."""
+    ve.eval()
+    oe.eval()
+    latent = torch.as_tensor(rows["latent_stack"][idx].astype(np.float32), device=device)
+    agent_state = torch.as_tensor(rows["agent_state"][idx], dtype=torch.float32, device=device)
+    cog_state = torch.as_tensor(rows["cog_state"][idx], dtype=torch.float32, device=device)
+    v_logit, rm_logit, pose_pred = ve._forward_all(latent, agent_state)
+    v_sig, rm_sig = torch.sigmoid(v_logit), torch.sigmoid(rm_logit)
+    ov_logit, orm_logit, _ = oe._forward_all(agent_state, cog_state)
+    ov_sig, orm_sig = torch.sigmoid(ov_logit), torch.sigmoid(orm_logit)
+    out = {
+        "v_per_member": v_sig.cpu().numpy().T,
+        "v_mean_all": v_sig.mean(0).cpu().numpy(),
+        "v_std": v_sig.std(0).cpu().numpy(),
+        "rm_mean_all": rm_sig.mean(0).cpu().numpy(),
+        "rm_std": rm_sig.std(0).cpu().numpy(),
+        "pose_pred": pose_pred.mean(0).cpu().numpy(),
+        "oracle_v_mean_all": ov_sig.mean(0).cpu().numpy(),
+        "oracle_v_std": ov_sig.std(0).cpu().numpy(),
+        "oracle_rm_mean_all": orm_sig.mean(0).cpu().numpy(),
+    }
+    for k in PASSTHROUGH_FIELDS:
+        out[k] = rows[k][idx]
+    return out
+
+
 # ============================================================================================ overfit test
 def run_overfit_test(rows: dict, pose_all: np.ndarray, device: str, model_dir: Path) -> None:
     n = len(rows["y"])
@@ -472,9 +562,12 @@ def run_overfit_test(rows: dict, pose_all: np.ndarray, device: str, model_dir: P
     normalizer.fit(rows["latent_stack"][idx], rows["agent_state"][idx])
     opt = torch.optim.AdamW(net.parameters(), lr=3.0e-4, weight_decay=0.0)
 
+    y_hard = rows["y"].astype(np.float32)  # binary y on purpose: a soft target's BCE floor is its entropy
     bce_hist = []
     for _step in range(2000):
-        loss, parts = compute_loss(net, normalizer, rows, pose_all, idx, device, w_reward=1.0, w_pose=0.5)
+        loss, parts = compute_loss(
+            net, normalizer, rows, pose_all, idx, device, w_reward=1.0, w_pose=0.5, y_override=y_hard
+        )
         opt.zero_grad()
         loss.backward()
         opt.step()
@@ -529,7 +622,10 @@ def main() -> None:
         rows, ctr["split_seed"], ctr["val_frac"], es_frac
     )
     fit_idx, es_idx, val_idx = np.nonzero(fit_mask)[0], np.nonzero(es_mask)[0], np.nonzero(val_mask)[0]
-    train_idx = np.nonzero(~val_mask)[0]  # fit + es combined -- normalizer stats only, never for gates
+    # D6 (pre-registration section 9): the Normalizer is fit on the FIT split only (never es / val), and
+    # without the stage-2 wall_artifact rows (they are dropped from every loss anyway).
+    train_idx = np.nonzero(~val_mask)[0]
+    norm_idx = fit_idx[~((rows["stage"][fit_idx] == 2) & rows["wall_artifact"][fit_idx])]
     ckey = composite_key(rows, group_key)
     (model_dir / "split.json").write_text(
         json.dumps(
@@ -554,7 +650,7 @@ def main() -> None:
         )
 
     normalizer = Normalizer()
-    normalizer.fit(rows["latent_stack"][train_idx], rows["agent_state"][train_idx])
+    normalizer.fit(rows["latent_stack"][norm_idx], rows["agent_state"][norm_idx])
 
     cfg_model = cfg["model"]
     value_kwargs = {
@@ -602,7 +698,7 @@ def main() -> None:
     print("\n=== shuffled-label control (1 ValueNet member, fit AND es labels shuffled independently) ===")
     # Shuffle fit-pool and es-pool labels with SEPARATE rngs so model selection (early stopping on es)
     # never sees a real label either -- the leak Opus flagged in the first version. val is untouched.
-    y_shuffled = rows["y"].copy()
+    y_shuffled = rows["v_target"].copy()  # the V-head target; shuffled independently within fit / es
     shuf_fit_pool = fit_idx[~((rows["stage"][fit_idx] == 2) & rows["wall_artifact"][fit_idx])]
     shuf_es_pool = es_idx[~((rows["stage"][es_idx] == 2) & rows["wall_artifact"][es_idx])]
     y_shuffled[shuf_fit_pool] = np.random.default_rng(3000).permutation(y_shuffled[shuf_fit_pool])
@@ -634,37 +730,7 @@ def main() -> None:
     print(f"\nsaved {model_dir / 'value_ensemble.pt'}, {model_dir / 'oracle_ensemble.pt'}")
 
     # ---- val predictions ----
-    ve.eval()
-    oe.eval()
-    with torch.no_grad():
-        latent = torch.as_tensor(rows["latent_stack"][val_idx].astype(np.float32), device=device)
-        agent_state = torch.as_tensor(rows["agent_state"][val_idx], dtype=torch.float32, device=device)
-        cog_state = torch.as_tensor(rows["cog_state"][val_idx], dtype=torch.float32, device=device)
-        v_logit, rm_logit, pose_pred = ve._forward_all(latent, agent_state)
-        v_sig, rm_sig = torch.sigmoid(v_logit), torch.sigmoid(rm_logit)
-        ov_logit, _, _ = oe._forward_all(agent_state, cog_state)
-        oracle_v_mean_all = torch.sigmoid(ov_logit).mean(0).cpu().numpy()
-
-    val_pred = {
-        "v_per_member": v_sig.cpu().numpy().T,
-        "v_mean_all": v_sig.mean(0).cpu().numpy(),
-        "v_std": v_sig.std(0).cpu().numpy(),
-        "rm_mean_all": rm_sig.mean(0).cpu().numpy(),
-        "rm_std": rm_sig.std(0).cpu().numpy(),
-        "pose_pred": pose_pred.mean(0).cpu().numpy(),
-        "oracle_v_mean_all": oracle_v_mean_all,
-        "y": rows["y"][val_idx],
-        "cov": rows["cov"][val_idx],
-        "pre_success": rows["pre_success"][val_idx],
-        "wall_artifact": rows["wall_artifact"][val_idx],
-        "source": rows["source"][val_idx],
-        "stage": rows["stage"][val_idx],
-        "r": rows["r"][val_idx],
-        "sigma": rows["sigma"][val_idx],
-        "seed_id": rows["seed_id"][val_idx],
-        "episode": rows["episode"][val_idx],
-        "cog_state": rows["cog_state"][val_idx],
-    }
+    val_pred = predict_rows(ve, oe, rows, val_idx, device)
     np.savez_compressed(model_dir / "val_predictions.npz", **val_pred)
     print(f"wrote {model_dir / 'val_predictions.npz'} ({len(val_idx)} rows)")
 
