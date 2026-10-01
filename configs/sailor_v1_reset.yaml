@@ -1,8 +1,8 @@
 # SAILOR v1 value / reward model (V + RM on NanoWM latents), random-reset starts.
 # Pre-registration + design + revision log: examples/nanowm_pusht_aug/docs/decisions/sailor_v1.md
 # (read section 9: T1 decisions D1-D8, T2 outcome = "noise everywhere" backup, T3 config decisions).
-# Do NOT change label rules / splits / gate thresholds after the first val look; the `gate:` block is
-# filled by Opus in T5 (before any val is seen) and the report fails closed while it is empty.
+# Do NOT change label rules / splits / the `gate:` block after the first val look. T5 decision
+# (sailor_v1.md section 9): G1/G2/G3/G5 are diagnostics without thresholds; G6 is the decision gate.
 # Seed namespaces live in nanowm_pusht_common.yaml (tests/test_sailor_config.py pins the copies below).
 extends: nanowm_pusht_common.yaml
 
@@ -80,6 +80,6 @@ model: {conv: [32, 64, 64], feat: 128, hidden: 256, ensemble: 5, bootstrap: true
 train: {lr: 3.0e-4, wd: 1.0e-4, batch: 256, max_epochs: 40, patience: 5, mix_stage1: 0.5,
         w_reward: 1.0, w_pose: 0.5, val_frac: 0.2, split_seed: 0}
 
-gate: {}   # T5 (Opus) fills the thresholds BEFORE any val is seen; value_gate_report must fail closed on {}
+gate: {diagnostic_only: true}   # G1/G2/G3/G5 reported without thresholds; G4/G6 keep their fixed rules
 
 smoke: {stage1_episodes: 20, stage2_anchors: 4, stage2_k: 2, test_anchors: 2}

@@ -81,8 +81,8 @@ def test_stage2_design(cfg):
     assert s2["noise_hold"] == 1 and s2["anchors"]["n"] == 250 and cfg["test_anchors"]["n"] == 100
 
 
-def test_gate_is_empty_and_train_has_no_confusing_keys(cfg):
-    assert cfg["gate"] == {}  # Opus fills it in T5; the report must fail closed meanwhile
+def test_gate_is_diagnostic_only_and_train_has_no_confusing_keys(cfg):
+    assert cfg["gate"] == {"diagnostic_only": True}  # T5: only G6 decides; G1/G2/G3/G5 have no thresholds
     assert set(cfg["train"]) >= {"lr", "wd", "batch", "max_epochs", "patience", "mix_stage1", "split_seed"}
     assert cfg["label"]["batch"] == 100 and cfg["label"]["B"] == 200 and cfg["label"]["gamma"] == 0.995
     assert cfg["smoke"]["test_anchors"] >= 1

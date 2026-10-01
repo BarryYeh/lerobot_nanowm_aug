@@ -230,3 +230,19 @@ def test_report_fails_closed_with_empty_gate():
     }
     ok = compute_report(d, easy, None, "x", None, n_boot_table=20, g6_boot=100)
     assert not ok["fail_closed"] and all(ok[g]["meets_threshold"] for g in ("G1", "G2", "G3", "G5"))
+
+
+def test_report_diagnostic_only_mode():
+    d = make_preds()
+    rep = compute_report(
+        d, {"diagnostic_only": True}, None, "no test anchors", None, n_boot_table=20, g6_boot=100
+    )
+    assert rep["diagnostic_only"] and not rep["fail_closed"] and rep["missing_thresholds"] == []
+    for g in ("G1", "G2", "G3", "G5"):
+        assert rep[g]["meets_threshold"] is None
+    assert np.isfinite(rep["G1"]["auroc"]) and np.isfinite(rep["G5"]["stage2_mae"])
+    assert isinstance(rep["G4"]["meets_threshold"], bool) and rep["G6"]["meets_threshold"] is False
+    md = to_markdown(rep)
+    assert "Diagnostic-only mode" in md and "FAIL CLOSED" not in md
+    with pytest.raises(AssertionError):
+        compute_report(d, {"diagnostic_only": True, "auroc_s1_min": 0.7}, None, "x", None, n_boot_table=20)

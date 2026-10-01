@@ -11,6 +11,9 @@ This script only computes numbers against the pre-registered thresholds in `cfg[
 and writes a PASS/FAIL table of whether each metric clears its threshold -- a fact about the numbers,
 not a go/no-go recommendation. Opus reads gate_report.md/.json and makes that call.
 
+`gate: {diagnostic_only: true}` (SAILOR v1, sailor_v1.md section 9 T5): G1/G2/G3/G5 are reported
+without thresholds (`meets_threshold` None) and nothing fails closed; G4 and G6 keep their fixed rules.
+
     uv run --extra training python examples/nanowm_pusht_aug/critic/value_gate_report.py \
         --config configs/value_model_topband.yaml --smoke
 """
@@ -211,7 +214,11 @@ def compute_report(
     """All gate numbers. `gate_cfg` may be empty: thresholds that are missing make their gate FAIL
     (`meets_threshold` False, `threshold` None) and are listed in `missing_thresholds`."""
     gate_cfg = dict(gate_cfg or {})
-    missing = [k for k in REQUIRED_THRESHOLDS if gate_cfg.get(k) is None]
+    diagnostic_only = bool(gate_cfg.pop("diagnostic_only", False))
+    if diagnostic_only:
+        set_thr = [k for k in REQUIRED_THRESHOLDS if gate_cfg.get(k) is not None]
+        assert not set_thr, f"gate.diagnostic_only excludes thresholds, got {set_thr}"
+    missing = [] if diagnostic_only else [k for k in REQUIRED_THRESHOLDS if gate_cfg.get(k) is None]
     gm = gate_mask(d)
     groups = group_ids(d)
     report: dict = {
@@ -219,6 +226,7 @@ def compute_report(
         "n_gate_rows": int(gm.sum()),
         "n_excluded_pre_success": int(d["pre_success"].sum()),
         "n_excluded_wall_artifact": int(d["wall_artifact"].sum()),
+        "diagnostic_only": diagnostic_only,
         "missing_thresholds": missing,
     }
 
@@ -390,6 +398,12 @@ def compute_report(
     report["real_vs_imagined"] = real_vs_imagined_block(d, gm, groups)
 
     # ---- fail-closed summary: G1-G5 need every threshold; G6 is evaluated on test anchors only ----
+    if diagnostic_only:
+        for k in ("G1", "G2", "G3", "G5"):
+            report[k]["meets_threshold"] = None
+        report["g1_g5_all_meet_threshold"] = None
+        report["fail_closed"] = False
+        return report
     g15 = [report[k]["meets_threshold"] for k in ("G1", "G2", "G3", "G4", "G5")]
     report["g1_g5_all_meet_threshold"] = bool(not missing and all(g15))
     report["fail_closed"] = bool(missing)
@@ -544,6 +558,12 @@ def _ci(c) -> str:
 
 def to_markdown(report: dict) -> str:
     lines = ["# Value/RM gate report", "", "Metrics only. Opus makes the go/no-go call.", ""]
+    if report.get("diagnostic_only"):
+        lines += [
+            "**Diagnostic-only mode: G1/G2/G3/G5 have no thresholds (`meets threshold` = None). "
+            "The decision gate is G6 (offline Best-of-N on test anchors).**",
+            "",
+        ]
     if report["missing_thresholds"]:
         lines += [
             f"**FAIL CLOSED: gate thresholds missing in config ({', '.join(report['missing_thresholds'])}). "
@@ -596,7 +616,8 @@ def to_markdown(report: dict) -> str:
     )
     lines += [
         "",
-        f"G1-G5 all meet threshold: **{report['g1_g5_all_meet_threshold']}**",
+        f"G1-G5 all meet threshold: **{report['g1_g5_all_meet_threshold']}**"
+        + (" (not gated in diagnostic-only mode)" if report.get("diagnostic_only") else ""),
         "",
         f"Diagnostic: stage-2 r=0 AUROC (n={report['G2_r0_diagnostic']['n']}) = {report['G2_r0_diagnostic']['auroc']:.4f}",
         "",
