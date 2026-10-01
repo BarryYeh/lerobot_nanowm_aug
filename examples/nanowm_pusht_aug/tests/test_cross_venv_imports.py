@@ -13,6 +13,7 @@ CROSS_VENV_MODULES = [
     "datagen.action_convert",
     "datagen.coverage_from_frame",
     "critic.value_model",
+    "critic.labels",
     "datagen.provenance",
     "config_io",
 ]

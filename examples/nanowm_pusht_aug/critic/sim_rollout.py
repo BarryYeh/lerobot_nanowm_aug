@@ -31,11 +31,14 @@ import gymnasium as gym
 import numpy as np
 import torch
 
-_EVAL = Path(__file__).resolve().parents[1] / "eval"
+_PROJ = Path(__file__).resolve().parents[1]
+_EVAL = _PROJ / "eval"
 sys.path.insert(0, str(_EVAL))
+sys.path.insert(0, str(_PROJ))
 from closed_loop_rollout import inject_noise  # noqa: E402
 from ood_failure_map import block_wall_gap, set_state, sim_state  # noqa: E402
 
+from critic.labels import PERTURB_MODES, chunks_active, forward_fill_cov  # noqa: E402
 from lerobot.utils.constants import ACTION  # noqa: E402
 
 
@@ -60,11 +63,16 @@ def rollout_batch(
     frame_cutoff_step: int = 110,
     wall_pen_px: float = 10.0,
     prepared_envs: list | None = None,
+    perturb_mode: str = "point",
+    chunk_hook=None,
 ) -> dict:
     """Roll `nb = len(cog_starts)` envs in lockstep from CoG start states, batched per step.
 
-    Perturbation (optional, one chunk per env): at the replan boundary `t == perturb_p[i]` (a
-    multiple of `na`), env i's next `na` actions -- which the base policy has already committed to
+    Perturbation (optional). `perturb_mode="point"` (default, legacy): ONE chunk per env, at the
+    replan boundary `t == perturb_p[i]` (a multiple of `na`). `perturb_mode="prefix"`: EVERY chunk
+    whose start boundary satisfies `t < perturb_p[i]` (so `perturb_p[i] >= episode_steps` noises the
+    whole episode and `perturb_p[i] == 0` noises nothing; the selection rule is
+    `labels.chunks_active`). At a selected boundary env i's next `na` actions -- which the base policy has already committed to
     in its action queue for this chunk -- are replaced by `inject_noise` applied to that exact
     chunk, using the sim's own agent pos/vel at the boundary. No other step of the rollout is
     touched: the returned action for every other step, and everything the policy itself computes
@@ -84,6 +92,15 @@ def rollout_batch(
     `frame_cutoff_step`-limited steps relative to the continuation start (grid index 0 = the
     prepared state).
 
+    The FRAME / grid tracking (224px env, `grid_*`, `grid_steps`) is controlled by
+    `frame_cutoff_step` only; `cov_per_step` is independent of it and always spans the full
+    `episode_steps`.
+
+    `chunk_hook` (optional, diagnostics only; consumes no RNG and changes nothing): called at every
+    replan boundary `t % na == 0` as `chunk_hook(t, idx, chunks, envs96)` with `idx` the list of
+    not-yet-done env indices, `chunks` (len(idx), na, 2) their CLEAN (un-noised) absolute-target
+    chunks, and `envs96` the env list (read-only use).
+
     Returns a dict with, for every env `i` in `range(nb)`:
       success_step   (nb,) int64      first step index (1-based) where `info["is_success"]`, else -1
       wall_artifact  (nb,) bool       True iff min block_wall_gap over the whole rollout < -wall_pen_px
@@ -94,6 +111,12 @@ def rollout_batch(
       grid_agent_vel (nb,G,2)
       grid_coverage  (nb,G) float32   sim coverage on the grid
       grid_frames    (nb,G,224,224,3) uint8, or None if lockstep224=False
+      cov_per_step   (nb, episode_steps+1) float32  index 0 = coverage of the start state, index s =
+                                       `info["coverage"]` after s executed steps; after an env
+                                       terminates / truncates / the loop ends early it is
+                                       forward-filled with the last recorded value (never zeros),
+                                       so `cov_per_step[i, success_step[i]] > 0.95` on success
+      perturb_mode   str              the mode used (provenance)
       queue_maxlen   int              policy._queues[ACTION].maxlen after the na override (must == na)
       lockstep_checks int             number of (env, grid step) pairs where 96px/224px sim_state
                                        was compared and found equal within 1e-9 (only if lockstep224)
@@ -108,6 +131,8 @@ def rollout_batch(
         noise_rng = np.random.default_rng(0)
     sigma = np.asarray(sigma, np.float64)
     perturb_p = np.asarray(perturb_p, np.int64)
+    if perturb_mode not in PERTURB_MODES:
+        raise ValueError(f"perturb_mode must be one of {PERTURB_MODES}, got {perturb_mode!r}")
 
     max_ep_steps = episode_steps + 10  # margin so gym's own TimeLimit never truncates us early
     prepared = prepared_envs is not None
@@ -160,6 +185,8 @@ def rollout_batch(
     grid_agent_vel = np.zeros((nb, G, 2), np.float64)
     grid_coverage = np.zeros((nb, G), np.float32)
     grid_frames = np.zeros((nb, G, 224, 224, 3), np.uint8) if lockstep224 else None
+    cov_per_step = np.zeros((nb, episode_steps + 1), np.float32)
+    last_step = np.zeros(nb, np.int64)  # last step index with a recorded coverage, per env
 
     wall_min = np.full(nb, np.inf, np.float64)
     success_step = np.full(nb, -1, np.int64)
@@ -174,6 +201,7 @@ def rollout_batch(
         grid_agent_pos[i, 0] = np.asarray(u.agent.position)
         grid_agent_vel[i, 0] = np.asarray(u.agent.velocity)
         grid_coverage[i, 0] = u._get_coverage()
+        cov_per_step[i, 0] = u._get_coverage()
         wall_min[i] = min(wall_min[i], float(block_wall_gap(st[None])[0]))
         if lockstep224:
             grid_frames[i, 0] = np.asarray(envs224[i].unwrapped.get_obs())
@@ -196,21 +224,29 @@ def rollout_batch(
             act = post(raw).cpu().numpy().astype(np.float64)
 
         if t % na == 0:
-            active = [i for i in range(nb) if (not done[i]) and sigma[i] > 0 and perturb_p[i] == t]
-            if active:
+            active = chunks_active(t, done, sigma, perturb_p, perturb_mode)
+            hook_idx = [i for i in range(nb) if not done[i]] if chunk_hook is not None else []
+            need = sorted(set(active) | set(hook_idx))
+            if need:
                 queue = policy._queues[ACTION]  # na-1 entries left: chunk steps 1..na-1, all envs
                 if len(queue) > 0:
                     with torch.no_grad():
                         future_real = post(torch.stack(list(queue), dim=0)).cpu().numpy().astype(np.float64)
                 else:
                     future_real = np.zeros((0, nb, 2))
-                for i in active:
+                clean_chunks = {}
+                for i in need:
                     fut = future_real[:, i] if future_real.shape[0] else np.zeros((0, 2))
                     chunk = np.concatenate([act[i : i + 1], fut], axis=0)
                     if len(chunk) < na:  # defensive: hold the last row if the queue was short
                         chunk = np.concatenate(
                             [chunk, np.repeat(chunk[-1:], na - len(chunk), axis=0)], axis=0
                         )
+                    clean_chunks[i] = chunk
+                if hook_idx:
+                    chunk_hook(t, hook_idx, np.stack([clean_chunks[i] for i in hook_idx]), envs96)
+                for i in active:
+                    chunk = clean_chunks[i]
                     u = envs96[i].unwrapped
                     pos_i = np.asarray(u.agent.position, np.float64)[None]
                     vel_i = np.asarray(u.agent.velocity, np.float64)[None]
@@ -233,6 +269,8 @@ def rollout_batch(
                 envs224[i].step(act[i])
             st = sim_state(u)
             wall_min[i] = min(wall_min[i], float(block_wall_gap(st[None])[0]))
+            cov_per_step[i, t + 1] = info["coverage"]
+            last_step[i] = t + 1
             if (t + 1) in grid_idx_of_step:
                 gi = grid_idx_of_step[t + 1]
                 grid_cog[i, gi] = st
@@ -255,6 +293,9 @@ def rollout_batch(
         if done.all():
             break
 
+    # env done (success / truncation) or the loop broke early via done.all(): forward-fill, never zeros
+    cov_per_step = forward_fill_cov(cov_per_step, last_step)
+
     if not prepared:
         for e in envs96:
             e.close()
@@ -272,6 +313,8 @@ def rollout_batch(
         "grid_agent_vel": grid_agent_vel,
         "grid_coverage": grid_coverage,
         "grid_frames": grid_frames,
+        "cov_per_step": cov_per_step,
+        "perturb_mode": perturb_mode,
         "queue_maxlen": queue_maxlen,
         "lockstep_checks": lockstep_checks,
     }
