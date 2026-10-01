@@ -25,6 +25,14 @@ the transition STARTING AT FRAME j, so round r's window must span stream steps
 Per round each branch re-plans on its own imagined frame, so this is a true closed loop.
 Strict-terminal accept: imagined coverage[last] >= --accept-cov.
 
+Chunk cadence (`--replan-every-rounds R`, default 1 = re-plan every round, the original behaviour):
+a chunk is sampled (and noised) only on rounds r % R == 0; round r then executes
+`cur_chunks[:, off:off+fi]` with `off = (r % R) * fi` (see `chunk_slices`). R=2 matches the stage-1
+10-step chunk cadence. Reproducibility (SAILOR v1): `--torch-seed` seeds torch before the lead-in and
+again (seed+1) before round 0; every run writes `<work>/lead_in.npz` (see `save_lead_in`) and
+`--lead-in <npz>` replays a saved lead-in's ACTIONS (no policy call, no torch RNG use) so several
+runs of the same seeds share bit-identical anchor states / context frames (paired candidates).
+
     uv run --extra training python examples/nanowm_pusht_aug/eval/closed_loop_rollout.py \
         --ckpt outputs/train/pushtnoise_clean/obs1_s100000/checkpoints/last/pretrained_model \
         --seeds examples/nanowm_pusht_aug/cl/seeds_pn_mid.npz --n-seeds 32 --k 4 --h-max 8 \
@@ -35,6 +43,7 @@ Strict-terminal accept: imagined coverage[last] >= --accept-cov.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
@@ -48,7 +57,7 @@ import torch
 
 from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy
 from lerobot.policies.factory import make_pre_post_processors
-from lerobot.utils.constants import OBS_IMAGES
+from lerobot.utils.constants import ACTION, OBS_IMAGES
 
 _PROJ = Path(__file__).resolve().parent.parent  # examples/nanowm_pusht_aug
 sys.path.insert(0, str(_PROJ))
@@ -137,6 +146,127 @@ def inject_noise(chunks, pos, vel, level: float, max_z: float, hold: int, rng) -
     return out
 
 
+def chunk_slices(r: int, every: int, fi: int, need: int, past_len: int) -> tuple[bool, int, slice, slice]:
+    """Round-r bookkeeping of the chunk cadence (pure; `every` = `--replan-every-rounds` R).
+
+    Returns `(sample_now, off, look, ex)`:
+      sample_now  a new chunk is sampled (and noised) this round iff `r % R == 0`;
+      off         offset of this round's executed steps inside the current chunk, `(r % R) * fi`;
+      look        slice of the chunk used as lookahead in the NanoWM window, `[off, off+need-past_len)`;
+      ex          slice of the chunk executed this round, `[off, off+fi)`.
+    R=1 gives `off=0`, `look=[0, need-past_len)`, `ex=[0, fi)` for every r -- the original code."""
+    assert every >= 1 and r >= 0, (r, every)
+    off = (r % every) * fi
+    return r % every == 0, off, slice(off, off + need - past_len), slice(off, off + fi)
+
+
+def validate_cadence(h_max: int, every: int) -> None:
+    """`--replan-every-rounds` must divide `--h-max`, else the last chunk would be cut short."""
+    assert every >= 1 and h_max % every == 0, (
+        f"h_max {h_max} must be a multiple of --replan-every-rounds {every}"
+    )
+
+
+def run_lead_in(
+    env96, env224, states, act_fn, *, hist: int, fi: int, lead: int, reset_base: int = 9000
+) -> dict:
+    """Real gym lead-in for every seed: `hist` 224px context frames (every `fi` steps) plus the `lead`
+    actions that produced them. `act_fn(i, t, pixels96) -> (2,) float64` supplies the action of seed
+    `i` at lead-in step `t` (called with t = 0 first, so a policy can reset there); the loop stops at
+    step `lead` WITHOUT stepping, so the last frame / `anchor_state` are the state the imagination
+    starts from. Used both for the policy lead-in and for the `--lead-in` replay (act_fn = saved actions)."""
+    u96, u224 = env96.unwrapped, env224.unwrapped
+    M = len(states)
+    ctx = np.zeros((M, hist, 224, 224, 3), np.uint8)
+    lead_acts = np.zeros((M, lead, 2), np.float64)
+    lead_pos = np.zeros((M, lead + 1, 2), np.float64)
+    lead_vel = np.zeros((M, lead + 1, 2), np.float64)
+    last96 = np.zeros((M, 96, 96, 3), np.uint8)
+    anchor_state = np.zeros((M, 5), np.float64)  # gym state where the IMAGINED rollout starts
+    for i in range(M):
+        st = states[i]
+        for e_, uu in ((env96, u96), (env224, u224)):
+            e_.reset(seed=reset_base + i)
+            place_body(uu, st)
+        obs = u96.get_obs()
+        ci = 0
+        for t in range(lead + 1):
+            if t % fi == 0 and ci < hist:
+                ctx[i, ci] = np.asarray(u224.get_obs())
+                ci += 1
+            lead_pos[i, t] = np.asarray(u96.agent.position)
+            lead_vel[i, t] = np.asarray(u96.agent.velocity)
+            if t == lead:
+                last96[i] = np.asarray(obs["pixels"])
+                anchor_state[i] = read_body(u96)
+                break  # frame at step `lead` captured, do NOT step
+            a = np.asarray(act_fn(i, t, np.asarray(obs["pixels"])), np.float64)
+            lead_acts[i, t] = a
+            for e_ in (env96, env224):
+                e_.step(a)
+            obs = u96.get_obs()
+    return {
+        "ctx": ctx,
+        "lead_acts": lead_acts,
+        "lead_pos": lead_pos,
+        "lead_vel": lead_vel,
+        "last96": last96,
+        "anchor_state": anchor_state,
+    }
+
+
+def _ctx_sha1(ctx: np.ndarray) -> np.ndarray:
+    return np.array(
+        [hashlib.sha1(np.ascontiguousarray(c).tobytes(), usedforsecurity=False).hexdigest() for c in ctx]
+    )
+
+
+def save_lead_in(
+    path: Path, res: dict, states: np.ndarray, *, hist: int, fi: int, lead_na: int, torch_seed: int | None
+) -> None:
+    """Persist what is needed to reproduce a lead-in exactly: the actions (`lead_acts`), the body-origin
+    seed states, the resulting `anchor_state` and `agent_state0` = [pos, vel] at the anchor, the agent
+    track, and a sha1 per seed of its context frames (frames are re-rendered from the actions)."""
+    lead = res["lead_acts"].shape[1]
+    np.savez(
+        path,
+        lead_acts=res["lead_acts"],
+        anchor_state=res["anchor_state"],
+        agent_state0=np.concatenate([res["lead_pos"][:, lead], res["lead_vel"][:, lead]], axis=1),
+        lead_pos=res["lead_pos"],
+        lead_vel=res["lead_vel"],
+        seed_states=np.asarray(states, np.float64),
+        ctx_sha1=_ctx_sha1(res["ctx"]),
+        fi=np.int64(fi),
+        hist=np.int64(hist),
+        lead_na=np.int64(lead_na),
+        torch_seed=np.int64(-1 if torch_seed is None else torch_seed),
+    )
+
+
+def load_lead_in(path: Path, states: np.ndarray, *, hist: int, fi: int) -> dict:
+    """Load a saved lead-in and check it belongs to these seeds / geometry."""
+    d = np.load(path)
+    lead = (hist - 1) * fi
+    assert int(d["fi"]) == fi and int(d["hist"]) == hist, (int(d["fi"]), int(d["hist"]), fi, hist)
+    assert d["lead_acts"].shape == (len(states), lead, 2), (d["lead_acts"].shape, len(states), lead)
+    assert np.array_equal(d["seed_states"], np.asarray(states, np.float64)), (
+        f"{path}: saved seed_states differ from --seeds[: n_seeds]"
+    )
+    return {k: d[k] for k in d.files}
+
+
+def check_lead_in_replay(saved: dict, res: dict) -> None:
+    """The replayed lead-in must reproduce the saved one BIT FOR BIT (anchor state, agent state at the
+    anchor, context frames) -- this is what makes candidates of different runs share a decision point."""
+    lead = res["lead_acts"].shape[1]
+    assert np.array_equal(saved["lead_acts"], res["lead_acts"])
+    assert np.array_equal(saved["anchor_state"], res["anchor_state"]), "replayed anchor_state differs"
+    agent0 = np.concatenate([res["lead_pos"][:, lead], res["lead_vel"][:, lead]], axis=1)
+    assert np.array_equal(saved["agent_state0"], agent0), "replayed agent state at the anchor differs"
+    assert np.array_equal(saved["ctx_sha1"], _ctx_sha1(res["ctx"])), "replayed context frames differ"
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ckpt", type=Path, required=True)
@@ -168,6 +298,35 @@ def main() -> None:
     p.add_argument("--max-z", type=float, default=3.0, help="cap on |relative action| in sigma units")
     p.add_argument("--noise-hold", type=int, default=5, help="steps each noise draw is held")
     p.add_argument("--noise-seed", type=int, default=0)
+    p.add_argument(
+        "--replan-every-rounds",
+        type=int,
+        default=1,
+        help="sample (and noise) a new chunk every R rounds, execute it in fi-step slices (default 1 = "
+        "every round, the original behaviour). Must divide --h-max; R>1 needs policy horizon >= "
+        "(R-1)*fi + need - (H-1)*fi (asserted)",
+    )
+    p.add_argument(
+        "--torch-seed",
+        type=int,
+        default=None,
+        help="torch.manual_seed before the lead-in, and again (seed+1) before round 0 so that a replayed "
+        "lead-in (no RNG use) and a policy lead-in leave the same RNG state. None = no seeding (old)",
+    )
+    p.add_argument(
+        "--lead-na",
+        type=int,
+        default=None,
+        help="set policy.config.n_action_steps for the lead-in (asserted via the action-queue length); "
+        "None = ckpt default (8 for pusht_imgonly)",
+    )
+    p.add_argument(
+        "--lead-in",
+        type=Path,
+        default=None,
+        help="lead_in.npz of an earlier run on the SAME seeds: replay its actions instead of calling the "
+        "policy; the replayed anchor_state / agent state / context frames must match it bit for bit",
+    )
     p.add_argument(
         "--save-latents",
         action="store_true",
@@ -215,41 +374,47 @@ def main() -> None:
         observation_height=224,
         max_episode_steps=lead + 40,
     )
-    u96, u224 = env96.unwrapped, env224.unwrapped
-    ctx = np.zeros((M, H, 224, 224, 3), np.uint8)
-    lead_acts = np.zeros((M, lead, 2), np.float64)
-    lead_pos = np.zeros((M, lead + 1, 2), np.float64)
-    lead_vel = np.zeros((M, lead + 1, 2), np.float64)
-    last96 = np.zeros((M, 96, 96, 3), np.uint8)
-    anchor_state = np.zeros((M, 5), np.float64)  # gym state where the IMAGINED rollout starts
-    for i in range(M):
-        st = states[i]
-        for e_, uu in ((env96, u96), (env224, u224)):
-            e_.reset(seed=9000 + i)
-            place_body(uu, st)
-        policy.reset()
-        obs = u96.get_obs()
-        ci = 0
-        for t in range(lead + 1):
-            if t % fi == 0 and ci < H:
-                ctx[i, ci] = np.asarray(u224.get_obs())
-                ci += 1
-            lead_pos[i, t] = np.asarray(u96.agent.position)
-            lead_vel[i, t] = np.asarray(u96.agent.velocity)
-            if t == lead:
-                last96[i] = np.asarray(obs["pixels"])
-                anchor_state[i] = read_body(u96)
-                break  # frame at step `lead` captured, do NOT step
-            img = (
-                torch.from_numpy(np.asarray(obs["pixels"])).permute(2, 0, 1).float().div(255.0)[None].to(dev)
-            )
-            with torch.no_grad():
-                a = post(policy.select_action(pre({"observation.image": img})))
-            a = a[0].cpu().numpy().astype(np.float64)
-            lead_acts[i, t] = a
-            for e_ in (env96, env224):
-                e_.step(a)
-            obs = u96.get_obs()
+    R = args.replan_every_rounds
+    validate_cadence(args.h_max, R)
+    if args.torch_seed is not None:
+        torch.manual_seed(args.torch_seed)
+
+    def policy_act(i: int, t: int, pix: np.ndarray) -> np.ndarray:
+        if t == 0:
+            if args.lead_na is not None:
+                policy.config.n_action_steps = args.lead_na
+            policy.reset()
+            if args.lead_na is not None:
+                assert policy._queues[ACTION].maxlen == args.lead_na, policy._queues[ACTION].maxlen
+        img = torch.from_numpy(pix).permute(2, 0, 1).float().div(255.0)[None].to(dev)
+        with torch.no_grad():
+            a = post(policy.select_action(pre({"observation.image": img})))
+        return a[0].cpu().numpy().astype(np.float64)
+
+    saved_lead = None
+    if args.lead_in is not None:
+        saved_lead = load_lead_in(args.lead_in, states, hist=H, fi=fi)
+        if args.lead_na is not None:
+            assert int(saved_lead["lead_na"]) == args.lead_na, (int(saved_lead["lead_na"]), args.lead_na)
+        act_fn = lambda i, t, pix: saved_lead["lead_acts"][i, t]  # noqa: E731 -- replay, no policy call
+    else:
+        act_fn = policy_act
+    res = run_lead_in(env96, env224, states, act_fn, hist=H, fi=fi, lead=lead)
+    if saved_lead is not None:
+        check_lead_in_replay(saved_lead, res)
+        print(
+            f"lead-in REPLAYED from {args.lead_in} (anchor_state / agent state / context frames bit-identical)"
+        )
+    ctx, lead_acts, lead_pos, lead_vel = res["ctx"], res["lead_acts"], res["lead_pos"], res["lead_vel"]
+    last96, anchor_state = res["last96"], res["anchor_state"]
+    lead_na = (
+        int(saved_lead["lead_na"])
+        if saved_lead is not None
+        else int(args.lead_na if args.lead_na is not None else policy.config.n_action_steps)
+    )
+    save_lead_in(
+        work / "lead_in.npz", res, states, hist=H, fi=fi, lead_na=lead_na, torch_seed=args.torch_seed
+    )
     env96.close()
     env224.close()
     print(f"lead-in done: {H} real context frames per seed, {lead} real actions per seed")
@@ -307,20 +472,33 @@ def main() -> None:
     agent_state_hist[:, 0] = np.concatenate([pos, vel], axis=1)
     try:
         for r in range(args.h_max):
-            # k independent chunks only at round 0; afterwards each branch re-plans on its own frame
-            chunks = sample_chunks(
-                policy, pre, post, cur96[::k] if r == 0 else cur96, k if r == 0 else 1, dev
-            )  # (bs, horizon, 2)
-            if args.inject_sigma > 0:
-                chunks = inject_noise(
-                    chunks, pos, vel, args.inject_sigma, args.max_z, args.noise_hold, noise_rng
-                )
             need = nf * fi
+            sample_now, off, look_sl, ex_sl = chunk_slices(r, R, fi, need, (H - 1) * fi)
+            if sample_now:
+                # k independent chunks only at round 0; afterwards each branch re-plans on its own frame
+                if r == 0 and args.torch_seed is not None:
+                    torch.manual_seed(
+                        args.torch_seed + 1
+                    )  # same state whether the lead-in used the RNG or not
+                cur_chunks = sample_chunks(
+                    policy, pre, post, cur96[::k] if r == 0 else cur96, k if r == 0 else 1, dev
+                )  # (bs, horizon, 2)
+                if r == 0:
+                    chunk0_clean = cur_chunks.copy()  # un-noised round-0 chunks (paired-candidate check)
+                if args.inject_sigma > 0:
+                    cur_chunks = inject_noise(
+                        cur_chunks, pos, vel, args.inject_sigma, args.max_z, args.noise_hold, noise_rng
+                    )
+            horizon = cur_chunks.shape[1]
+            assert horizon >= look_sl.stop, (
+                f"policy horizon {horizon} < {look_sl.stop} needed by round {r} (replan_every_rounds={R})"
+            )
             wins = np.zeros((bs, nf, fi * 2), np.float32)
             for b in range(bs):
                 k0 = r * fi
                 past = stream[b, k0 : k0 + (H - 1) * fi + fi]  # executed part, 10 entries
-                look = chunks[b, : need - len(past)]  # lookahead from the chunk
+                assert len(past) == (H - 1) * fi, (len(past), (H - 1) * fi)
+                look = cur_chunks[b, look_sl]  # lookahead from the chunk
                 seg = np.concatenate([past, look], 0)[:need]
                 # exact rel: targets minus the agent trajectory, bootstrapped from the agent
                 # state recorded at stream index k0
@@ -340,7 +518,7 @@ def main() -> None:
             )
 
             # advance: execute the chunk's first fi targets, extend the stream and agent track
-            ex = chunks[:, :fi]
+            ex = cur_chunks[:, ex_sl]
             exec_stream[:, r * fi : (r + 1) * fi] = ex
             newpos = np.zeros((bs, fi, 2))
             newvel = np.zeros((bs, fi, 2))
@@ -410,6 +588,15 @@ def main() -> None:
             meta=np.array([k, args.h_max, args.num_sampling_steps], np.int32),
             anchor_frame=ctx[sid[b], H - 1],  # REAL 224px frame at the anchor (exec stream index 0)
             inject_sigma=np.float32(args.inject_sigma),
+            # cadence / reproducibility metadata (the labeler asserts the ones it relies on)
+            fi=np.int64(fi),
+            hist=np.int64(H),
+            replan_every_rounds=np.int64(R),
+            horizon=np.int64(cur_chunks.shape[1]),
+            lead_na=np.int64(lead_na),
+            torch_seed=np.int64(-1 if args.torch_seed is None else args.torch_seed),
+            noise_hold=np.int64(args.noise_hold),
+            chunk0_clean=chunk0_clean[b],  # round-0 chunk BEFORE noise (horizon, 2): paired-candidate check
             **extra,
         )
         n += 1
