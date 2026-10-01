@@ -42,7 +42,7 @@ case "$ARM" in
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
 ROOT="${HF_LEROBOT_HOME:-${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/lerobot}/$REPO_ID"
-OUT="outputs/train/cl_aug/${TAG}_d${DROP}_s${SEED}"
+OUT="${OUT_ROOT:-outputs/train/cl_aug}/${TAG}_d${DROP}_s${SEED}"   # OUT_ROOT (env): keep outputs off the repo
 mkdir -p examples/nanowm_pusht_aug/logs
 echo "arm=$ARM dataset=$REPO_ID seed=$SEED steps=$STEPS -> $OUT"
 uv run --extra training lerobot-train \
@@ -54,7 +54,7 @@ uv run --extra training lerobot-train \
   --policy.device=cuda \
   --policy.push_to_hub=false \
   --policy.optimizer_lr=1e-5 \
-  --wandb.enable=true \
+  --wandb.enable="${WANDB_ENABLE:-true}" \
   --wandb.mode=online \
   --wandb.project=nanowm_cl_aug \
   --batch_size=64 \
