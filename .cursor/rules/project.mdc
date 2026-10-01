@@ -1,0 +1,67 @@
+---
+description: Project overview, conventions and NanoWM two-venv constraints for lerobot_nanowm_aug
+alwaysApply: true
+---
+
+# lerobot_nanowm_aug
+
+LeRobot (PyTorch robotics library) with an in-tree research prototype that uses NanoWM
+imagined rollouts as data augmentation for a PushT diffusion policy
+(`examples/nanowm_pusht_aug/`). See `AGENTS.md`, `AGENT_GUIDE.md` and
+`examples/nanowm_pusht_aug/README.md` for details.
+
+## Tech stack
+
+Python 3.12+ · PyTorch · Hugging Face (datasets, Hub, accelerate) · draccus (config/CLI) · Gymnasium · uv
+
+## Commands
+
+- Always use `uv run` instead of raw `python` / `pip`.
+- Setup: `uv sync --locked --extra test --extra dev`
+- Tests: `uv run pytest tests -svv --maxfail=10`
+- Lint/format: `pre-commit run --all-files`
+
+## Long-running tasks: use tmux (SSH-disconnect safe)
+
+After Plan mode, when executing the plan, run every task in a tmux session so it keeps
+running if the SSH connection drops. This applies to training, eval, data generation,
+and any command that may take more than a minute.
+
+- Start detached, one named session per task:
+  `tmux new-session -d -s <task_name> 'cd /home/feng-en.yeh/repos/lerobot_nanowm_aug && <command> 2>&1 | tee logs/<task_name>.log'`
+- Check progress: `tmux capture-pane -pt <task_name> -S -50` or `tail -n 50 logs/<task_name>.log`
+- List sessions: `tmux ls`; attach: `tmux attach -t <task_name>`; stop: `tmux kill-session -t <task_name>`
+- Reuse an existing session name only after confirming it is finished (`tmux ls`).
+- Do not run long tasks directly in the foreground agent shell; poll the tmux session/log instead.
+- Quick commands (git, ls, small tests, lint) may still run directly.
+
+## Code layout (`src/lerobot/`)
+
+- `scripts/` CLI entry points (`lerobot-train`, `lerobot-eval`, `lerobot-record`)
+- `configs/` draccus dataclass configs (`@register_subclass` for polymorphism)
+- `policies/` one subdir per policy, inheriting `PreTrainedPolicy`; lazy imports in `factory.py`
+- `processor/`, `datasets/`, `envs/`, `robots/`, `motors/`, `cameras/`, `teleoperators/`
+
+## Conventions
+
+- Prefer top-level imports; relative imports between siblings in a module, absolute across modules.
+- Optional deps: guard with `TYPE_CHECKING or _foo_available` plus `require_package(...)` at use time;
+  reuse flags in `utils/import_utils.py`, never call `is_package_available` directly.
+- Mypy is strict only for `envs`, `configs`, `optim`, `model`, `cameras`, `motors`, `transport`:
+  add type annotations when touching these.
+
+## NanoWM augmentation prototype (`examples/nanowm_pusht_aug/`)
+
+- Two separate uv venvs that cannot be merged:
+  - lerobot venv: Python >= 3.12 (`datagen/`, `eval/`, `scripts/`)
+  - nanowm venv: `third_party/nano-world-model/.venv`, Python 3.11 (`imagined_rollout.py`)
+- The pipeline crosses venvs only through `.npz` files on disk.
+- `datagen/action_convert.py` and `datagen/coverage_from_frame.py` are imported from both venvs:
+  keep them pure numpy/cv2 and never import `lerobot` there.
+- Do not rename `datagen/` to `utils/` (collides with nano-world-model's top-level `src/utils`).
+- `third_party/nano-world-model` is a vendored squashed git subtree: do not edit it in place;
+  update via `git subtree pull`.
+- Generated dirs (`imagined/`, `cl/`, `diag/`, `logs/`, `outputs/`) are git-ignored and reproducible.
+- Image-only policy: PushT state contains block pose, so it is not reconstructable from actions.
+- Keep real and imagined data at the same fps (sub-sample real to fps 2, `frame_interval=5`)
+  and use identical policy hyperparameters for the `a` vs `a+aug` comparison.
