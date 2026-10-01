@@ -173,4 +173,9 @@ SAILOR（arXiv 2506.05294）用 RM + V 在 world model 裡替 base policy 的候
   - **表 D（雜訊天花板）改為選用**：它原本是 G3 門檻的上限；G3 不再有門檻，所以 T6 不必產生 `labels_nc0/1.npz`，只在 G6 結果需要解讀時才跑。
   - **只看標籤的 headroom 檢查**（stage-2 訓練 anchors 的 T4 標籤，不含任何模型輸出）：r=2 時 250 個 anchor 都有 8 個候選，226 個（90%）候選間 y 不一致；隨機挑的平均成功率 0.631，事後挑最好 0.984。r=4：223 個（89%）、0.664、0.984。即挑選空間存在；事後最好含單次接續的運氣，所以判定看 Δ（相對隨機），不看 gap closed。
   - **T5 審核問題的處理**：D6（Normalizer 只在 fit split、排除 wall 列）屬 T1 已註冊的修訂，接受。stage-1 的 within-anchor AUROC 格（依 episode 分組、混合不同 t）保留但只作描述。D8 的 t 分層回報延後，只在 G6 結果需要解讀時補。
+- T6（訓練 + report；HEAD `d6ef9c35`；log `t6_train_report.log`，報告 `gate_report.md/json/png`，皆在 `out_dir`）：27,632 列 → fit 19,895 / es 2,202 / val 5,535。sanity：shuffled-label AUROC 0.486、permuted-val 0.506。以下為無門檻的診斷數字（val）。
+  - G1：stage-1 reset AUROC 0.658 [0.624, 0.692]，`ECE_soft` 0.012。G2：stage-2 r≥2 AUROC 0.600 [0.543, 0.651]。G3：within-anchor AUROC 0.509（275 組）。G4：0.013 [−0.002, 0.028]，固定規則未過。G5：RM MAE 0.034（stage 1）/ 0.040（stage 2）。
+  - OracleNet：stage-1 AUROC 0.680，stage-2 r≥2 0.585，within-anchor **0.470**。真實狀態也幾乎無法在同一 anchor 的候選間排序，表示候選之間的 y 差異可能大多來自接續的隨機性；這正是表 D 要量的。
+  - **OracleNet 未收斂**：5 個 member 都跑滿 `max_epochs=40`（ValueNet 在 21–36 epoch early stop），RM MAE 0.094 反而比 ValueNet 的 0.034 差（coverage 是 block pose 的確定函數）。表 A 中 Oracle 為基準的分解（c−a、(d−b)−(c−a) 為負）因此不可解讀。
+  - val 上的 G6 預覽（50 個 val anchors，47 informative；只供選 β，不是決策）：ValueNet 三個 β 的 Δ 都是 0.075 [−0.050, 0.195]，one-sided 下界 −0.030；三者相同，report 選出 β=0。OracleNet β=0.3 的 Δ 0.115，下界 0.030。SD(Δ) ≈ 0.445，所以 100 個 test anchors 的下界 > 0 約需 Δ ≥ 0.073。
 
