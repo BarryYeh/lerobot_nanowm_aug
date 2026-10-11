@@ -3,7 +3,7 @@
 
 Pool = the T7 test-anchor imagined branches (<out_dir>/test_stage2/sigma*/branches), never seen by V.
 
-    select   score every branch with the trained ValueEnsemble at r=8 (SAILOR z_end score) and r=2, with
+    select   score every branch with the trained ValueEnsemble at the final query round (SAILOR z_end score) and r=2, with
              beta = the beta the T7 report selected on val; drop anchors G6 drops; pick one branch per
              anchor for arm V (argmax, tie -> (sigma, cand) ascending) and arm R (uniform, seed 0);
              write selection.json / branch_scores.csv and a merged symlink dir of the union of branches.
@@ -32,7 +32,7 @@ from config_io import load_config  # noqa: E402
 
 ARMS = ("V", "R")
 RANDOM_SEED = 0
-Q_FINAL, Q_EARLY = 8, 2
+Q_EARLY = 2  # the final query round is max(stage2.query_rounds) (8 in sailor_v1, 6 in sailor_v1_h6)
 N_SIGMA_CAND = 8  # 2 sigma x 4 cand
 
 
@@ -42,10 +42,13 @@ def branch_name(sigma: float, seed_id: int, cand: int) -> str:
 
 
 def pool_dir(cfg: dict) -> Path:
-    return Path(cfg["out_dir"]).expanduser().parent / "finetune" / "pool"
+    """`finetune.pool_dir` in the config, else <out_dir>/../finetune/pool (the sailor_v1 location)."""
+    pd = cfg.get("finetune", {}).get("pool_dir")
+    return Path(pd).expanduser() if pd else Path(cfg["out_dir"]).expanduser().parent / "finetune" / "pool"
 
 
 def select(cfg: dict) -> None:
+    q_final = int(max(cfg["stage2"]["query_rounds"]))
     import torch
     from gate_tables import candidate_table
     from train_value_model import load_stage2_rows, predict_rows
@@ -56,7 +59,7 @@ def select(cfg: dict) -> None:
     rep = json.loads((out / "gate_report.json").read_text())
     beta = float(rep["G6"]["selected_beta"])
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    rows = load_stage2_rows(t2 / "labels.npz")
+    rows = load_stage2_rows(t2 / "labels.npz", cfg["stage2"]["query_rounds"])
     ve = ValueEnsemble.load(out / "model" / "value_ensemble.pt", device=dev)
     oe = OracleEnsemble.load(out / "model" / "oracle_ensemble.pt", device=dev)
     d = predict_rows(ve, oe, rows, np.arange(len(rows["y"])), dev)
@@ -68,22 +71,22 @@ def select(cfg: dict) -> None:
     print(f"beta={beta}  G6-usable anchors {len(keep)}  wall-excluded {tab['n_wall_excluded']}  "
           f"missing-excluded {tab['n_missing_excluded']}")
 
-    cols = ("anchor", "sigma", "cand", "score_r8", "score_r2", "y_r8", "y_r2", "pre_success_r8", "wall_r8", "v_r8", "rm_r8")
+    cols = ("anchor", "sigma", "cand", "score_final", "score_r2", "y_final", "y_r2", "pre_success_final", "wall_final", "v_final", "rm_final")
     table, per_anchor = [], {}
     for a in keep:
         cand_rows = []
         for sg in sorted(set(d["sigma"][d["seed_id"] == a].tolist())):
             for c in sorted(set(d["cand"][(d["seed_id"] == a) & (d["sigma"] == sg)].tolist())):
                 m = (d["seed_id"] == a) & (d["sigma"] == sg) & (d["cand"] == c)
-                r8, r2 = np.flatnonzero(m & (d["r"] == Q_FINAL)), np.flatnonzero(m & (d["r"] == Q_EARLY))
-                assert len(r8) == 1 and len(r2) == 1, (a, sg, c, len(r8), len(r2))
-                i8, i2 = r8[0], r2[0]
+                rfin, r2 = np.flatnonzero(m & (d["r"] == q_final)), np.flatnonzero(m & (d["r"] == Q_EARLY))
+                assert len(rfin) == 1 and len(r2) == 1, (a, sg, c, len(rfin), len(r2))
+                ifin, i2 = rfin[0], r2[0]
                 s = lambda i: float(d["v_mean_all"][i] + beta * d["rm_mean_all"][i])  # noqa: E731
                 cand_rows.append(
-                    dict(anchor=a, sigma=float(sg), cand=int(c), score_r8=s(i8), score_r2=s(i2),
-                         y_r8=float(d["y"][i8] | d["pre_success"][i8]), y_r2=float(d["y"][i2] | d["pre_success"][i2]),
-                         pre_success_r8=bool(d["pre_success"][i8]), wall_r8=bool(d["wall_artifact"][i8]),
-                         v_r8=float(d["v_mean_all"][i8]), rm_r8=float(d["rm_mean_all"][i8]))
+                    dict(anchor=a, sigma=float(sg), cand=int(c), score_final=s(ifin), score_r2=s(i2),
+                         y_final=float(d["y"][ifin] | d["pre_success"][ifin]), y_r2=float(d["y"][i2] | d["pre_success"][i2]),
+                         pre_success_final=bool(d["pre_success"][ifin]), wall_final=bool(d["wall_artifact"][ifin]),
+                         v_final=float(d["v_mean_all"][ifin]), rm_final=float(d["rm_mean_all"][ifin]))
                 )
         assert len(cand_rows) == N_SIGMA_CAND
         per_anchor[a] = cand_rows  # already (sigma, cand) ascending
@@ -93,20 +96,20 @@ def select(cfg: dict) -> None:
     sel = {"V": {}, "R": {}}
     for a in keep:  # ascending anchor order
         cr = per_anchor[a]
-        sel["V"][a] = int(np.argmax([c["score_r8"] for c in cr]))  # ties -> first = lowest (sigma, cand)
+        sel["V"][a] = int(np.argmax([c["score_final"] for c in cr]))  # ties -> first = lowest (sigma, cand)
         sel["R"][a] = int(rng.integers(0, N_SIGMA_CAND))
-    # sanity (labels only): real y at r=8 of the selected candidates vs all candidates
+    # sanity (labels only): real y at the final round of the selected candidates vs all candidates
     qual = {}
     for arm in ARMS:
-        y8 = np.array([per_anchor[a][sel[arm][a]]["y_r8"] for a in keep])
+        yfin = np.array([per_anchor[a][sel[arm][a]]["y_final"] for a in keep])
         y2 = np.array([per_anchor[a][sel[arm][a]]["y_r2"] for a in keep])
-        qual[arm] = {"mean_y_r8": float(y8.mean()), "mean_y_r2": float(y2.mean()), "n": len(y8)}
-    allm = np.array([[c["y_r8"] for c in per_anchor[a]] for a in keep])
-    qual["all_candidates_mean_y_r8"] = float(allm.mean())
-    qual["hindsight_best_mean_y_r8"] = float(allm.max(1).mean())
-    qual["n_informative_r8"] = int(((allm.sum(1) > 0) & (allm.sum(1) < N_SIGMA_CAND)).sum())
-    qual["pre_success_selected_r8"] = {
-        arm: int(sum(per_anchor[a][sel[arm][a]]["pre_success_r8"] for a in keep)) for arm in ARMS
+        qual[arm] = {"mean_y_final": float(yfin.mean()), "mean_y_r2": float(y2.mean()), "n": len(yfin)}
+    allm = np.array([[c["y_final"] for c in per_anchor[a]] for a in keep])
+    qual["all_candidates_mean_y_final"] = float(allm.mean())
+    qual["hindsight_best_mean_y_final"] = float(allm.max(1).mean())
+    qual["n_informative_final"] = int(((allm.sum(1) > 0) & (allm.sum(1) < N_SIGMA_CAND)).sum())
+    qual["pre_success_selected_final"] = {
+        arm: int(sum(per_anchor[a][sel[arm][a]]["pre_success_final"] for a in keep)) for arm in ARMS
     }
     qual["overlap_V_R"] = int(sum(sel["V"][a] == sel["R"][a] for a in keep))
     chosen = {arm: [(a, per_anchor[a][sel[arm][a]]) for a in keep] for arm in ARMS}

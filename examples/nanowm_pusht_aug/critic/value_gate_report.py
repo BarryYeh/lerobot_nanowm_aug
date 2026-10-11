@@ -751,21 +751,21 @@ def load_test_predictions(
     for f in ("value_ensemble.pt", "oracle_ensemble.pt"):
         if not (model_dir / f).exists():
             return None, f"missing {model_dir / f}; run the train stage first"
-    rows = load_stage2_rows(labels)
+    rows = load_stage2_rows(labels, cfg["stage2"].get("query_rounds"))
     assert (rows["anchor_id"] >= 0).all()
     ve = ValueEnsemble.load(model_dir / "value_ensemble.pt", device=device)
     oe = OracleEnsemble.load(model_dir / "oracle_ensemble.pt", device=device)
     return predict_rows(ve, oe, rows, np.arange(len(rows["y"])), device), None
 
 
-def load_noise_ceiling(stage2_root: Path, names: tuple[str, str]) -> dict:
+def load_noise_ceiling(stage2_root: Path, names: tuple[str, str], rounds: list[int] | None = None) -> dict:
     paths = [stage2_root / n for n in names]
     if not all(p.exists() for p in paths):
         return {
             "status": "skipped",
             "reason": f"re-label files not found: {[str(p) for p in paths if not p.exists()]}",
         }
-    return noise_ceiling(load_stage2_rows(paths[0]), load_stage2_rows(paths[1]))
+    return noise_ceiling(load_stage2_rows(paths[0], rounds), load_stage2_rows(paths[1], rounds))
 
 
 NC_NAMES = (
@@ -820,7 +820,7 @@ def main() -> None:
     k = cfg["smoke"]["stage2_k"] if args.smoke else cfg["stage2"]["k"]
     n_cand = int(k) * len(cfg["stage2"]["inject_sigma"])
     betas = tuple(float(b) for b in cfg["label"]["beta_candidates"])
-    nc = load_noise_ceiling(base / "stage2", NC_NAMES)
+    nc = load_noise_ceiling(base / "stage2", NC_NAMES, cfg["stage2"].get("query_rounds"))
 
     gate_cfg = cfg.get("gate") or {}
     report = compute_report(d, gate_cfg, test_pred, skip_reason, nc, betas=betas, n_candidates=n_cand)

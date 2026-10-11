@@ -194,9 +194,22 @@ def _load_stage1(stage1_dir: Path) -> dict:
     return {k: np.concatenate(v, axis=0) for k, v in cols.items()}
 
 
-def load_stage2_rows(labels_path: Path) -> dict:
+def load_stage2_rows(labels_path: Path, rounds: list[int] | None = None) -> dict:
+    """Load the stage-2 label rows, optionally keeping only some query rounds.
+
+    `rounds` (= the config's stage2.query_rounds) keeps only the rows whose query round is listed, so a
+    config can drop rounds from an existing labels.npz without re-imagining (e.g. r=8 for sailor_v1_r6).
+    """
     assert labels_path.exists(), f"missing {labels_path} -- run the label stage before training"
-    d = np.load(labels_path, allow_pickle=True)
+    npz = np.load(labels_path, allow_pickle=True)
+    d = {k: npz[k] for k in npz.files}
+    if rounds is not None:
+        keep = np.isin(d["r"], np.asarray(rounds, np.int64))
+        missing = sorted({int(r) for r in rounds} - set(np.unique(d["r"]).tolist()))
+        assert not missing, f"{labels_path}: query_rounds {missing} absent from the labels"
+        if not keep.all():
+            print(f"{labels_path}: keeping rounds {sorted(rounds)} -> {int(keep.sum())}/{len(keep)} rows")
+            d = {k: (v[keep] if v.ndim and len(v) == len(keep) else v) for k, v in d.items()}
     n = len(d["y"])
     return {
         "latent_stack": d["latent_stack"],
@@ -225,8 +238,8 @@ def load_stage2_rows(labels_path: Path) -> dict:
 _load_stage2 = load_stage2_rows  # back-compat alias
 
 
-def load_table(stage1_dir: Path, stage2_labels: Path) -> dict:
-    s1, s2 = _load_stage1(stage1_dir), _load_stage2(stage2_labels)
+def load_table(stage1_dir: Path, stage2_labels: Path, rounds: list[int] | None = None) -> dict:
+    s1, s2 = _load_stage1(stage1_dir), _load_stage2(stage2_labels, rounds)
     rows = {k: np.concatenate([s1[k], s2[k]], axis=0) for k in s1}
     fs = rows["frame_steps"]
     assert (np.diff(fs, axis=1) == 5).all(), "frame_steps spacing != 5 somewhere in the assembled table"
@@ -606,7 +619,7 @@ def main() -> None:
 
     print(f"loading stage1 <- {stage1_dir}, stage2 <- {stage2_labels} (device={device})")
     t_load = time.time()
-    rows = load_table(stage1_dir, stage2_labels)
+    rows = load_table(stage1_dir, stage2_labels, cfg["stage2"].get("query_rounds"))
     n1, n2 = int((rows["stage"] == 1).sum()), int((rows["stage"] == 2).sum())
     print(f"loaded {len(rows['y'])} rows (stage1={n1}, stage2={n2}) in {time.time() - t_load:.1f}s")
     pose_all = pose_target(rows["cog_state"])

@@ -67,6 +67,8 @@ imagine_set() {
       LEADARG=(--lead-in "$ROOT/sigma$FIRST/work/lead_in.npz")
     fi
     RUN=$ROOT/sigma$SIG
+    # a symlinked sigma dir belongs to another run (e.g. sailor_v1_s025 reuses sailor_v1/sigma0.0): never wipe it
+    if [ -L "$RUN" ]; then echo "refusing to re-imagine $RUN: it is a symlink into another run"; exit 1; fi
     rm -rf "$RUN/branches"; mkdir -p "$RUN/branches"   # work/ is wiped by the driver itself
     $PY $E/closed_loop_rollout.py --ckpt "$CKPT" --seeds "$SEEDS" \
       --n-seeds "$NSEEDS" --k "$K" --h-max "$(y stage2.h_max)" --inject-sigma "$SIG" \
