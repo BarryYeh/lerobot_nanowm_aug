@@ -114,6 +114,15 @@ def stage_real(args) -> None:
 
     if args.region == "topband":
         starts = sample_topband_starts(args.n_starts, args.seed)
+    elif args.region == "late":
+        _pol = DiffusionPolicy.from_pretrained(args.ckpt).to(dev).eval()
+        _pre, _post = make_pre_post_processors(
+            _pol.config,
+            pretrained_path=str(args.ckpt),
+            preprocessor_overrides={"device_processor": {"device": dev}},
+        )
+        starts = sample_late_starts(args, _pol, _pre, _post, dev)
+        del _pol
     else:  # gym_pusht's own reset distribution, as the in-distribution reference
         e = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos")
         starts = []
@@ -281,6 +290,59 @@ def run_worker(work: Path, seeds: np.ndarray, windows: np.ndarray, args) -> np.n
                 proc.kill()
     print(f"  worker: {bs} branches x {rounds} rounds in {(time.time() - t0) / 60:.1f} min")
     return np.stack([np.load(work / f"frames_{r + 1}.npz")["frames"] for r in range(rounds)], 1)
+
+
+def sample_late_starts(args, policy, pre, post, dev) -> np.ndarray:
+    """Late-episode, near-goal starts: the base policy (no noise) is rolled from env.reset(seed=seed+50000+i) and
+    one 5-step grid state with t in [late_t_min, late_t_max], sim coverage in [late_cov_lo, late_cov_hi) and no
+    success yet is drawn per episode (uniformly among the eligible ones) until n_starts exist. This is where the
+    base policy's failures are decided (sailor_v1 T2: 89% of failing episodes decide after t=100)."""
+    import gym_pusht  # noqa: F401
+    import gymnasium as gym
+
+    sys.path.insert(0, str(_PROJ / "critic"))
+    from sim_rollout import rollout_batch  # noqa: E402
+
+    rng = np.random.default_rng(args.seed + 7)
+    got, i0, tmax, n = [], 0, int(args.late_t_max), 100
+    while len(got) < args.n_starts:
+        if i0 >= 40 * args.n_starts:
+            raise SystemExit(f"only {len(got)} late starts after {i0} episodes")
+        e = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos")
+        cog0 = []
+        for i in range(i0, i0 + n):
+            e.reset(seed=args.seed + 50_000 + i)
+            cog0.append(sim_state(e.unwrapped))
+        e.close()
+        res = rollout_batch(
+            policy,
+            pre,
+            post,
+            np.asarray(cog0),
+            device=dev,
+            na=10,
+            episode_steps=tmax,
+            seed=args.seed + 50_000,
+            batch_start=i0,
+            lockstep224=False,
+            frame_grid_stride=FI,
+            frame_cutoff_step=tmax,
+        )
+        steps, gc, gcov = res["grid_steps"], res["grid_cog"], res["grid_coverage"]
+        for j in range(n):
+            ss = res["success_step"][j]
+            ok = (
+                (steps >= args.late_t_min)
+                & (gcov[j] >= args.late_cov_lo)
+                & (gcov[j] < args.late_cov_hi)
+                & ((ss < 0) | (steps < ss))
+            )
+            idx = np.flatnonzero(ok)
+            if len(idx) and len(got) < args.n_starts:
+                got.append(gc[j, rng.choice(idx)])
+        i0 += n
+        print(f"  late starts: {len(got)}/{args.n_starts} from {i0} episodes", flush=True)
+    return np.asarray(got)
 
 
 def stage_wm(args) -> None:
@@ -623,7 +685,15 @@ def main() -> None:
     p.add_argument("--work", type=Path, default=Path("examples/nanowm_pusht_aug/cl/wmfid/topband"))
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     # real
-    p.add_argument("--region", choices=["topband", "reset"], default="topband")
+    p.add_argument("--region", choices=["topband", "reset", "late"], default="topband")
+    p.add_argument("--late-t-min", type=int, default=100, help="--region late: earliest start step")
+    p.add_argument("--late-t-max", type=int, default=250, help="--region late: latest start step")
+    p.add_argument(
+        "--late-cov-lo", type=float, default=0.7, help="--region late: min sim coverage at the start"
+    )
+    p.add_argument(
+        "--late-cov-hi", type=float, default=0.945, help="--region late: max sim coverage (not yet success)"
+    )
     p.add_argument("--ckpt", type=Path, default=BASE_CKPT)
     p.add_argument("--n-starts", type=int, default=48)
     p.add_argument("--inject", choices=["sigma", "beta"], default="sigma", help="noise parameterization")
