@@ -100,3 +100,7 @@ seed_namespace:
   sailor_v1_test_anchor: 750000    # sailor_v1_reset G6 test anchors: independent reset rollouts, never seen in training
   sailor_v1_t2_checks: 760000      # sailor_v1 T2 simulator checks (noise vs clean success rate, failure timing)
   sailor_v1_label_cont: 770000     # sailor_v1 stage-2 continuation policy sampling (label); Table D re-run uses 770001
+  sailor_expand_anchor: 780000     # sailor_expand: reset rollouts the candidate anchors are drawn FROM (+ imagine torch / noise seeds)
+  sailor_expand_screen: 790000     # sailor_expand: base-policy screening rollouts from the candidate anchors
+  sailor_expand_verify: 900000     # sailor_expand: discovery continuation seeds 900000 + 2i (cont_seed + 1 = noise rng)
+  sailor_expand_replicate: 910000  # sailor_expand: replication continuation seeds 910000 + 2i

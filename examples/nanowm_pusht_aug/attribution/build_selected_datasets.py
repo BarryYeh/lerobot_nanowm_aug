@@ -57,7 +57,10 @@ def build_real_plus_pairs(
             shutil.rmtree(HF_LEROBOT_HOME / r)
     pool = LeRobotDataset(pool_repo, root=HF_LEROBOT_HOME / pool_repo)
     drop = sorted(set(range(pool.meta.total_episodes)) - keep)
-    delete_episodes(pool, episode_indices=drop, output_dir=HF_LEROBOT_HOME / sub_repo, repo_id=sub_repo)
+    if drop:
+        delete_episodes(pool, episode_indices=drop, output_dir=HF_LEROBOT_HOME / sub_repo, repo_id=sub_repo)
+    else:  # keep every pair: delete_episodes refuses an empty drop list, aggregate the pool itself
+        sub_repo = pool_repo
     aggregate_datasets(
         repo_ids=[real_repo, sub_repo],
         aggr_repo_id=repo_id,

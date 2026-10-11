@@ -3,6 +3,10 @@
 
     uv run python examples/nanowm_pusht_aug/attribution/finetune_compare.py \
         ~/datastorage/nanowm_pusht_aug/finetune/eval --arms base v r
+
+`--pairs a:b ...` picks the comparisons (default v:r v:base r:base). When every arm dir also holds
+success_steps.npz (eval/eval_success_steps.py), success steps are reported too: per arm the median over its
+successes, per pair the median difference on the episodes BOTH arms solve (Wilcoxon signed-rank p).
 """
 
 from __future__ import annotations
@@ -30,16 +34,29 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("eval_dir", type=Path)
     p.add_argument("--arms", nargs="+", default=["base", "v", "r"])
+    p.add_argument("--pairs", nargs="+", default=["v:r", "v:base", "r:base"], help="a:b comparisons, a - b")
     a = p.parse_args()
+    steps = {t: a.eval_dir.expanduser() / t / "success_steps.npz" for t in a.arms}
+    steps = (
+        {t: np.load(f)["success_step"] for t, f in steps.items()}
+        if all(f.exists() for f in steps.values())
+        else None
+    )
     s = {t: load_successes(a.eval_dir.expanduser() / t) for t in a.arms}
     lines = ["| arm | n | successes | success rate | 95% CI (Wilson) |", "|---|---|---|---|---|"]
     res = {"arms": {}, "pairs": {}}
     for t, v in s.items():
         lo, hi = wilson(int(v.sum()), len(v))
-        lines.append(f"| {t} | {len(v)} | {int(v.sum())} | {v.mean() * 100:.1f}% | [{lo * 100:.1f}, {hi * 100:.1f}] |")
+        lines.append(
+            f"| {t} | {len(v)} | {int(v.sum())} | {v.mean() * 100:.1f}% | [{lo * 100:.1f}, {hi * 100:.1f}] |"
+        )
         res["arms"][t] = {"n": len(v), "k": int(v.sum()), "rate": float(v.mean()), "ci95": [lo, hi]}
-    lines += ["", "| comparison | diff (pp) | paired bootstrap 95% CI (pp) | only-A / only-B | McNemar p |", "|---|---|---|---|---|"]
-    pairs = [("v", "r"), ("v", "base"), ("r", "base")]
+    lines += [
+        "",
+        "| comparison | diff (pp) | paired bootstrap 95% CI (pp) | only-A / only-B | McNemar p |",
+        "|---|---|---|---|---|",
+    ]
+    pairs = [tuple(x.split(":")) for x in a.pairs]
     for x, y in pairs:
         if x not in s or y not in s:
             continue
@@ -49,8 +66,39 @@ def main() -> None:
         pv = mcnemar_exact(va, vb)
         d = (va.mean() - vb.mean()) * 100
         ob = (int((va & ~vb).sum()), int((~va & vb).sum()))
-        lines.append(f"| {x} - {y} | {d:+.1f} | [{lo * 100:+.1f}, {hi * 100:+.1f}] | {ob[0]} / {ob[1]} | {pv:.3f} |")
-        res["pairs"][f"{x}-{y}"] = {"diff": float(d / 100), "ci95": [lo, hi], "only_a": ob[0], "only_b": ob[1], "mcnemar_p": pv}
+        lines.append(
+            f"| {x} - {y} | {d:+.1f} | [{lo * 100:+.1f}, {hi * 100:+.1f}] | {ob[0]} / {ob[1]} | {pv:.3f} |"
+        )
+        res["pairs"][f"{x}-{y}"] = {
+            "diff": float(d / 100),
+            "ci95": [lo, hi],
+            "only_a": ob[0],
+            "only_b": ob[1],
+            "mcnemar_p": pv,
+        }
+    if steps is not None:
+        from scipy.stats import wilcoxon
+
+        lines += ["", "| arm | median success step | mean success step |", "|---|---|---|"]
+        for t, ss in steps.items():
+            ok = ss[ss > 0]
+            lines.append(f"| {t} | {np.median(ok):.0f} | {ok.mean():.1f} |")
+            res["arms"][t].update(median_steps=float(np.median(ok)), mean_steps=float(ok.mean()))
+        lines += [
+            "",
+            "| comparison | episodes both solve | median step diff (a - b) | Wilcoxon p |",
+            "|---|---|---|---|",
+        ]
+        for x, y in pairs:
+            if x not in steps or y not in steps:
+                continue
+            both = (steps[x] > 0) & (steps[y] > 0)
+            dd = (steps[x][both] - steps[y][both]).astype(float)
+            pv = float(wilcoxon(dd).pvalue) if (dd != 0).any() else 1.0
+            lines.append(f"| {x} - {y} | {int(both.sum())} | {np.median(dd):+.1f} | {pv:.3g} |")
+            res["pairs"].setdefault(f"{x}-{y}", {}).update(
+                n_both=int(both.sum()), median_step_diff=float(np.median(dd)), wilcoxon_p=pv
+            )
     txt = "\n".join(lines)
     print(txt)
     (a.eval_dir.expanduser() / "comparison.md").write_text(txt + "\n")
