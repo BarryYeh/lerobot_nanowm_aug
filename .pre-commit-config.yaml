@@ -98,7 +98,7 @@ repos:
     hooks:
       - id: mypy
         args: [--config-file=pyproject.toml]
-        exclude: ^(examples|benchmarks|tests)/
+        exclude: ^(examples|research|benchmarks|tests)/
 
   ##### Docstring Checks #####
   # - repo: https://github.com/akaihola/darglint2

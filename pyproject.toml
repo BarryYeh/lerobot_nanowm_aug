@@ -419,7 +419,7 @@ ignore = [
 # established notation for shapes and gains (H history, G rollout, Cz/Sz latent channels/size, KP/KV PD
 # gains, M image moments). Renaming them to snake_case would make the code harder to check against the
 # sources it cites, not easier.
-"examples/nanowm_pusht_aug/**" = ["N806"]
+"research/nanowm_aug/**" = ["N806"]
 
 # D (pydocstyle) is enabled globally, but only holds for code that has been converted to the docstring
 # standard in docs/source/writing_docstrings.mdx. Every module below is still on the old style; each entry
@@ -429,6 +429,7 @@ ignore = [
 # CI helper scripts and the packaging shim.
 "tests/**" = ["D"]
 "examples/**" = ["D"]
+"research/**" = ["D"]
 "benchmarks/**" = ["D"]
 "scripts/**" = ["D"]
 "setup.py" = ["D"]
@@ -466,7 +467,7 @@ ignore = [
 "src/lerobot/__version__.py" = ["D"]
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ["lerobot"]
+known-first-party = ["lerobot", "nwaug", "nwaug_envs"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -500,6 +501,9 @@ default.extend-ignore-identifiers-re = [
     "ser",
     "ein",
     "thw",
+    "thr",  # threshold, used in research/nanowm_aug
+    "THR",
+    "PN",
     "inpt",
     "arange",
     "is_compileable",

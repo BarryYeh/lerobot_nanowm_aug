@@ -180,5 +180,5 @@ outputs/
 # third-party research repos read for reference (SAILOR, CUPID)
 codes/
 
-# NanoWM Hub weights (pinned in configs/nanowm_pusht_common.yaml), not vendored
+# NanoWM Hub weights (pinned in research/nanowm_aug/configs/common.yaml), not vendored
 third_party/

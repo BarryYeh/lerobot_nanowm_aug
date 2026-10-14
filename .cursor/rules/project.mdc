@@ -7,8 +7,8 @@ alwaysApply: true
 
 LeRobot (PyTorch robotics library) with an in-tree research prototype that uses NanoWM
 imagined rollouts as data augmentation for a PushT diffusion policy
-(`examples/nanowm_pusht_aug/`). See `AGENTS.md`, `AGENT_GUIDE.md` and
-`examples/nanowm_pusht_aug/README.md` for details.
+(`research/nanowm_aug/`). See `AGENTS.md`, `AGENT_GUIDE.md` and
+`research/nanowm_aug/README.md` for details.
 
 ## Tech stack
 
@@ -60,18 +60,25 @@ After launching a long-running task in tmux, use the `/loop` skill to check prog
 - Mypy is strict only for `envs`, `configs`, `optim`, `model`, `cameras`, `motors`, `transport`:
   add type annotations when touching these.
 
-## NanoWM augmentation prototype (`examples/nanowm_pusht_aug/`)
+## NanoWM augmentation prototype (`research/nanowm_aug/`)
 
+- Layout: `nwaug/` (env-agnostic library: `wm`, `datagen`, `critic`, `attribution`, `eval`),
+  `nwaug_envs/pusht/` (PushT adapter), `proj/pusht/{sailor,cupid,heuristic,method1,scripts}`
+  (one folder per experiment, each with a README), `configs/`, `tests/`, `docs/`.
+- One PYTHONPATH root: `research/nanowm_aug`. Import `nwaug.*` and `nwaug_envs.pusht.*`; do not add
+  other `sys.path` inserts. `proj/` is not a package (scripts run directly).
 - Two separate uv venvs that cannot be merged:
-  - lerobot venv: Python >= 3.12 (`datagen/`, `eval/`, `scripts/`)
-  - nanowm venv: `third_party/nano-world-model/.venv`, Python 3.11 (`imagined_rollout.py`)
+  - lerobot venv: Python >= 3.12 (`nwaug/datagen`, `nwaug/eval`, `proj/`)
+  - nanowm venv: `third_party/nano-world-model/.venv`, Python 3.11 (`nwaug/wm/imagined_rollout.py`)
 - The pipeline crosses venvs only through `.npz` files on disk.
-- `datagen/action_convert.py` and `datagen/coverage_from_frame.py` are imported from both venvs:
-  keep them pure numpy/cv2 and never import `lerobot` there.
-- Do not rename `datagen/` to `utils/` (collides with nano-world-model's top-level `src/utils`).
+- `nwaug_envs/pusht/{action_convert,coverage}.py`, `nwaug/datagen/provenance.py`,
+  `nwaug/attribution/config_io.py`, `nwaug/critic/{value_model,labels}.py` are imported from both
+  venvs: never import `lerobot` or `gym_pusht` there (keep `action_convert`/`coverage` pure numpy/cv2).
+- Never create top-level packages named `utils` or `envs` (collide with nano-world-model's `src/utils`
+  and with `lerobot.envs`).
 - `third_party/nano-world-model` is a vendored squashed git subtree: do not edit it in place;
   update via `git subtree pull`.
-- Generated dirs (`imagined/`, `cl/`, `diag/`, `logs/`, `outputs/`) are git-ignored and reproducible.
+- Generated dirs (`imagined/`, `cl/`, `diag/`, `logs/`, `output/`, `outputs/`) are git-ignored and reproducible.
 - Image-only policy: PushT state contains block pose, so it is not reconstructable from actions.
 - Keep real and imagined data at the same fps (sub-sample real to fps 2, `frame_interval=5`)
   and use identical policy hyperparameters for the `a` vs `a+aug` comparison.
