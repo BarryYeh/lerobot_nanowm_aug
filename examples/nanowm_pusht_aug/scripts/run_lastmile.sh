@@ -40,8 +40,8 @@ BASE_CKPT=outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_m
 CTRL_CKPT=$HOME/datastorage/nanowm_pusht_aug/value_model/sailor_expand/finetune/train/pusht_imgonly_d8_s1000/checkpoints/020000/pretrained_model
 if [ -n "$SMOKE" ]; then N=6; K=1; MIN_ACC=0; MIN_GAP=-1; TARGET=12; else N=400; K=4; MIN_ACC=100; MIN_GAP=0.10; TARGET=1200; fi
 SIGMAS=(0.0 0.1 0.25)
-NSS=$(uv run python $P/attribution/config_io.py configs/sailor_expand.yaml nanowm.num_sampling_steps)
-WMB=$(uv run python $P/attribution/config_io.py configs/sailor_expand.yaml nanowm.wm_batch)
+NSS=$(uv run python $P/attribution/config_io.py configs/nanowm_pusht_common.yaml nanowm.num_sampling_steps)
+WMB=$(uv run python $P/attribution/config_io.py configs/nanowm_pusht_common.yaml nanowm.wm_batch)
 SUF=${SMOKE:+_smoke}
 
 st_collect() {
