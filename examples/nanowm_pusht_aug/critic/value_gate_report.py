@@ -15,7 +15,7 @@ not a go/no-go recommendation. Opus reads gate_report.md/.json and makes that ca
 without thresholds (`meets_threshold` None) and nothing fails closed; G4 and G6 keep their fixed rules.
 
     uv run --extra training python examples/nanowm_pusht_aug/critic/value_gate_report.py \
-        --config configs/value_model_topband.yaml --smoke
+        --config configs/sailor_v1_reset.yaml --smoke
 """
 
 from __future__ import annotations

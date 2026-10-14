@@ -15,7 +15,7 @@ Each state is placed exactly the way closed_loop_rollout.py does it and must lan
 Default: the three CUPID sets (topband.pool / .test / .eval -> seeds_{pool,test,eval}.npz).
 With `--section a.b --out-name f.npz` it writes ONE set instead, from the config node cfg[a][b]
 ({n, seed, min_wall_gap}), e.g. the value-model stage-2 anchors:
-    ... --config configs/value_model_topband.yaml --section stage2.anchors --out-name seeds_stage2.npz
+    ... --config configs/sailor_v1_reset.yaml --section stage2.anchors --out-name seeds_stage2.npz
 """
 
 from __future__ import annotations

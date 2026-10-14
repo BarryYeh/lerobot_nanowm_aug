@@ -42,9 +42,9 @@ second, independent sanity check verifies the AUROC code itself: the REAL (non-s
 ensemble's AUROC on val with the val labels permuted, which should also land at ~0.5.
 
     uv run --extra training python examples/nanowm_pusht_aug/critic/train_value_model.py \
-        --config configs/value_model_topband.yaml --smoke
+        --config configs/sailor_v1_reset.yaml --smoke
     uv run --extra training python examples/nanowm_pusht_aug/critic/train_value_model.py \
-        --config configs/value_model_topband.yaml --smoke --overfit-test
+        --config configs/sailor_v1_reset.yaml --smoke --overfit-test
 
 Optional W&B logging: a `wandb: {enable, entity, project, mode}` block in the config turns it on (logging
 only -- it never touches labels, splits or model selection). Off for --smoke / --overfit-test and with
@@ -284,7 +284,7 @@ def load_stage2_rows(labels_path: Path, rounds: list[int] | None = None) -> dict
     """Load the stage-2 label rows, optionally keeping only some query rounds.
 
     `rounds` (= the config's stage2.query_rounds) keeps only the rows whose query round is listed, so a
-    config can drop rounds from an existing labels.npz without re-imagining (e.g. r=8 for sailor_v1_r6).
+    config can drop rounds from an existing labels.npz without re-imagining (see sailor_v1_reset.yaml).
     """
     assert labels_path.exists(), f"missing {labels_path} -- run the label stage before training"
     npz = np.load(labels_path, allow_pickle=True)

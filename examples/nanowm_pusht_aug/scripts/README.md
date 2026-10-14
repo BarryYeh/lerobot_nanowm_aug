@@ -28,7 +28,7 @@ audited in `../eval/README.md`; the shared values live in `configs/nanowm_pusht_
 | `run_eval_suite.sh [rollouts_per_init] [n_random]`       | headline `a` vs `a+aug` at the fps-2 control rate, both init distributions                                                                           |
 | `run_value_model.sh <config.yaml> [stage ...] [--smoke]` | value/reward-model (V/RM) on NanoWM latents: seeds / collect / encode / imagine / label / train / report                                             |
 
-Ridge scoring (`cupid_select_topband_ridge.yaml`) and the bidirectional LOO/AOI driver (`run_cupid_bidir.sh` and `cupid_bidir_verified464*.yaml`) were removed after tag `archive/pre-cleanup`. `attribution/build_bidir_datasets.py` remains and can be called by hand.
+Ridge scoring (`cupid_select_topband_ridge.yaml`) and the bidirectional LOO/AOI driver (`run_cupid_bidir.sh` and `cupid_bidir_verified464*.yaml`) were removed after tag `archive/pre-cleanup`. `attribution/build_bidir_datasets.py` remains and can be called by hand. SAILOR v1 variants `sailor_v1_r6.yaml`, `sailor_v1_s025.yaml`, `run_sailor_v1_s025.sh`, and `value_model_topband.yaml` were removed in the same cleanup; the kept entry is `sailor_v1_reset.yaml` with `run_value_model.sh`.
 
 ## Note on the `proto_` prefix
 
