@@ -128,3 +128,56 @@ def test_predict_rows_and_stage2_loader_carry_new_fields(tmp_path):
     ):
         assert len(out[k]) == n, k
     assert np.array_equal(out["anchor_id"], rows["seed_id"])
+
+
+def test_train_member_on_epoch_callback_and_wandb_logger_noop(tmp_path):
+    from train_value_model import WandbLogger, train_member
+
+    rows = _rows(n=64)
+    pose_all = pose_target(rows["cog_state"])
+    norm = Normalizer()
+    norm.fit(rows["latent_stack"], rows["agent_state"])
+    idx = np.arange(len(rows["y"]))
+    cfg_train = {
+        "batch": 16,
+        "mix_stage1": 0.5,
+        "lr": 1e-3,
+        "wd": 0.0,
+        "max_epochs": 3,
+        "patience": 5,
+        "w_reward": 1.0,
+        "w_pose": 0.5,
+    }
+    seen = []
+    torch.manual_seed(0)
+    hist, _ = train_member(
+        ValueNet(), norm, rows, pose_all, idx, idx, cfg_train, "cpu", 0, "t", on_epoch=seen.append
+    )
+    assert seen == hist and [h["epoch"] for h in seen] == [0, 1, 2]
+    # monitor split: test_loss goes to the callback only, never into history (no effect on selection)
+    seen2 = []
+    torch.manual_seed(0)
+    hist2, best2 = train_member(
+        ValueNet(),
+        norm,
+        rows,
+        pose_all,
+        idx,
+        idx,
+        cfg_train,
+        "cpu",
+        0,
+        "t",
+        on_epoch=seen2.append,
+        monitor_idx=idx,
+    )
+    assert all("test_loss" in h for h in seen2) and all("test_loss" not in h for h in hist2)
+    assert [h["es_loss"] for h in hist2] == [h["es_loss"] for h in hist]
+    # disabled (config off / smoke / --no-wandb) -> every call is a no-op and no callback is created
+    for lg in (
+        WandbLogger(None, {}, "x", enabled=True),
+        WandbLogger({"enable": True, "project": "p"}, {}, "x", False),
+    ):
+        assert lg.on_epoch_fn("value/m0") is None
+        lg.summary({"a": 1})
+        lg.finish()

@@ -46,9 +46,13 @@ ckpt:
   base: outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model
   finetuned_untrimmed464: outputs/train/cl_aug/untrimmed464_d8_s1000/checkpoints/last/pretrained_model
   control_d8: outputs/train/cl_aug/a_real_only_d8_s1000/checkpoints/last/pretrained_model
+  # base v2: same demos / hparams as `base`, observation = SD-VAE latent of the 224px render
+  # (train_latent_base.sh; eval with eval/eval_latent_policy.py, not lerobot-eval)
+  base_v2_latent: outputs/train/pusht_latent/obs1_s100000/checkpoints/last/pretrained_model
 
 datasets:
   real: local/pusht_imgonly              # 206 episodes, the real-only arm and the stats anchor
+  real_latent: local/pusht_latent        # the same 206 episodes as SD-VAE latents (base v2)
   pool_untrimmed464: local/pusht_cl_untrimmed464
   train_untrimmed464: local/pusht_plus_untrimmed464
 

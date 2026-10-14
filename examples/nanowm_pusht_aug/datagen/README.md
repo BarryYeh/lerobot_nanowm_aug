@@ -35,12 +35,13 @@ uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.p
 uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.py <name> --help
 ```
 
-| name                 | module                          | source → output                                                                             |
-| -------------------- | ------------------------------- | ------------------------------------------------------------------------------------------- |
-| `pusht-noise`        | `convert_pusht_noise.py`        | `pusht_noise/{train,val}` archive → `local/pusht_noise_224_fi<N>[_imgonly]`                 |
-| `pusht-imgonly`      | `convert_pusht_imgonly.py`      | `lerobot/pusht` → `local/pusht_imgonly` (drop `observation.state`)                          |
-| `pushtnoise-denoise` | `convert_pushtnoise_denoise.py` | `pusht_noise` train → `local/pushtnoise_clean185_imgonly` (185 min-residual denoised demos) |
-| `imagined`           | `pack_imagined.py`              | `imagined_rollout.py` `.npz` shards → `local/pusht_noise_224_imgonly_nanoWM_fi5`            |
+| name                 | module                          | source → output                                                                                           |
+| -------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `pusht-noise`        | `convert_pusht_noise.py`        | `pusht_noise/{train,val}` archive → `local/pusht_noise_224_fi<N>[_imgonly]`                               |
+| `pusht-imgonly`      | `convert_pusht_imgonly.py`      | `lerobot/pusht` → `local/pusht_imgonly` (drop `observation.state`)                                        |
+| `pusht-latent`       | `convert_pusht_latent.py`       | diffusion_policy `pusht_cchi_v7_replay` → `local/pusht_latent` (224px re-render → SD-VAE latent, base v2) |
+| `pushtnoise-denoise` | `convert_pushtnoise_denoise.py` | `pusht_noise` train → `local/pushtnoise_clean185_imgonly` (185 min-residual denoised demos)               |
+| `imagined`           | `pack_imagined.py`              | `imagined_rollout.py` `.npz` shards → `local/pusht_noise_224_imgonly_nanoWM_fi5`                          |
 
 `DATASET_DIR` must be the parent of `pusht_noise/` (e.g. `~/Downloads/bmw48-osfstorage-datasets-archive`).
 Open-loop and a live `action_convert.load_action_stats` call make the vendored NanoWM loader write

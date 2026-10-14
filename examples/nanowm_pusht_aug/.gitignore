@@ -6,12 +6,14 @@
 # diag/     : diagnostic figures, videos, calibration .npz
 # logs/     : training / eval logs
 # outputs/  : lerobot-train / lerobot-eval output dirs
+# output/   : review videos and sheets (mp4, png, pkl)
 # ckpt/     : local NanoWM checkpoint copies
 imagined/
 cl/
 diag/
 logs/
 outputs/
+output/
 ckpt/
 __pycache__/
 *.pyc

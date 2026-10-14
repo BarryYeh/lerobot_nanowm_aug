@@ -12,6 +12,7 @@ audited in `../eval/README.md`; the shared values live in `configs/nanowm_pusht_
 | `proto_eval_pusht.sh <ckpt> <out> [n] [seed] [n_action_steps]` | `lerobot-eval` on gym_pusht at fps 10. Omitting `n_action_steps` keeps the checkpoint's own                                                         |
 | `proto_train_pusht.sh [n_obs] [seed]`                          | train from scratch on `local/pusht_imgonly`                                                                                                         |
 | `proto_train_pushtnoise.sh [seed]`                             | train from scratch on `local/pushtnoise_clean185_imgonly`                                                                                           |
+| `train_latent_base.sh [n_obs] [seed]`                          | base v2: train from scratch on SD-VAE latents, `local/pusht_latent` (eval: `eval/eval_latent_policy.py`)                                            |
 | `train_baseline.sh [seed] [n_obs]`                             | the fps-2 `a` baseline on `local/pusht_noise_224_fi5_imgonly`                                                                                       |
 
 ## Pipelines -- each runs a whole comparison end to end

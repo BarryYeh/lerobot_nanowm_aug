@@ -260,7 +260,8 @@ def _save_atomic(path: Path, **a) -> None:
 
 def run_worker(work: Path, seeds: np.ndarray, windows: np.ndarray, args) -> np.ndarray:
     """seeds (bs,H,224,224,3), windows (bs,rounds,NF,2FI) -> imagined frames (bs,rounds,224,224,3).
-    Open loop: every window is known up front, so all chunk files are written before the worker starts."""
+    Open loop: every window is known up front, so all chunk files are written before the worker starts.
+    `args.wm_seed` (optional, default absent/None) is passed to the worker as `--seed`."""
     work.mkdir(parents=True, exist_ok=True)
     for f in work.glob("*"):
         f.unlink()
@@ -271,6 +272,8 @@ def run_worker(work: Path, seeds: np.ndarray, windows: np.ndarray, args) -> np.n
     cmd = [str(NANOWM_PY), str(_PROJ / "imagined_rollout.py"), "closed-loop",
            "--work", str(work), "--rounds", str(rounds),
            "--history", str(H), "--num-sampling-steps", str(args.num_sampling_steps), "--wm-batch", str(args.wm_batch)]  # fmt: skip
+    if getattr(args, "wm_seed", None) is not None:
+        cmd += ["--seed", str(args.wm_seed)]
     t0 = time.time()
     with open(work / "wm_worker.log", "w") as log:
         proc = subprocess.Popen(

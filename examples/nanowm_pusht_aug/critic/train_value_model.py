@@ -45,6 +45,10 @@ ensemble's AUROC on val with the val labels permuted, which should also land at 
         --config configs/value_model_topband.yaml --smoke
     uv run --extra training python examples/nanowm_pusht_aug/critic/train_value_model.py \
         --config configs/value_model_topband.yaml --smoke --overfit-test
+
+Optional W&B logging: a `wandb: {enable, entity, project, mode}` block in the config turns it on (logging
+only -- it never touches labels, splits or model selection). Off for --smoke / --overfit-test and with
+--no-wandb; a failure to start the run only warns, training goes on.
 """
 
 from __future__ import annotations
@@ -75,6 +79,88 @@ from value_model import (  # noqa: E402
 BUCKETS = ("band", "reset", "stage2")
 BUCKET_OFFSET = {"band": 0, "reset": 1, "stage2": 2}
 GROUP_MOD = 10_000_000  # >> any episode id (<=2000) or seed_id (<=250); keeps composite keys unique
+
+
+# ============================================================================================ wandb
+class WandbLogger:
+    """Thin optional wrapper around one wandb run. `enabled=False` (or any init failure) makes every
+    method a no-op, so call sites never branch on it."""
+
+    def __init__(self, cfg_wandb: dict | None, cfg: dict, run_name: str, enabled: bool):
+        self.run = None
+        self._hist: dict[str, list[dict]] = {}
+        cfg_wandb = cfg_wandb or {}
+        if not (enabled and cfg_wandb.get("enable", False)):
+            return
+        try:
+            import wandb
+
+            self.run = wandb.init(
+                entity=cfg_wandb.get("entity"),
+                project=cfg_wandb["project"],
+                mode=cfg_wandb.get("mode", "online"),
+                name=run_name,
+                config=cfg,
+                job_type="train_value_model",
+                dir=cfg_wandb.get("dir") or cfg.get("out_dir"),
+                settings=wandb.Settings(init_timeout=float(cfg_wandb.get("init_timeout", 30))),
+            )
+        except Exception as e:  # noqa: BLE001 -- logging must never kill a training run
+            print(f"WARNING wandb disabled: init failed ({type(e).__name__}: {e})")
+            self.run = None
+
+    def on_epoch_fn(self, prefix: str):
+        """Per-epoch callback for train_member: logs `<prefix>/{train_loss,es_loss}` against the member's
+        own `<prefix>/epoch` axis (members stop at different epochs, so they cannot share one step)."""
+        if self.run is None:
+            return None
+        self.run.define_metric(f"{prefix}/epoch")
+        self.run.define_metric(f"{prefix}/*", step_metric=f"{prefix}/epoch")
+
+        self._hist[prefix] = []
+
+        def _log(h: dict) -> None:
+            self._hist[prefix].append(h)
+            out = {
+                f"{prefix}/epoch": h["epoch"],
+                f"{prefix}/train_loss": h["train_loss"],
+                f"{prefix}/es_loss": h["es_loss"],
+            }
+            if "test_loss" in h:
+                out[f"{prefix}/test_loss"] = h["test_loss"]
+            self.run.log(out)
+
+        return _log
+
+    def loss_plot(self, prefix: str) -> None:
+        """One chart with train / valid (= early-stopping set) / test (= held-out val split) loss of a member."""
+        if self.run is None or not self._hist.get(prefix):
+            return
+        import wandb
+
+        hist = self._hist[prefix]
+        keys, ys = ["train", "valid (es)"], [[h["train_loss"] for h in hist], [h["es_loss"] for h in hist]]
+        if all("test_loss" in h for h in hist):
+            keys.append("test (val)")
+            ys.append([h["test_loss"] for h in hist])
+        chart = wandb.plot.line_series(
+            xs=[h["epoch"] for h in hist], ys=ys, keys=keys, title=f"{prefix} loss", xname="epoch"
+        )
+        self.run.log({f"loss_curves/{prefix}": chart})
+
+    def summary(self, values: dict) -> None:
+        if self.run is not None:
+            self.run.summary.update(values)
+
+    def log_image(self, key: str, path: Path) -> None:
+        if self.run is not None:
+            import wandb
+
+            self.run.log({key: wandb.Image(str(path))})
+
+    def finish(self) -> None:
+        if self.run is not None:
+            self.run.finish()
 
 
 # ============================================================================================ metrics
@@ -397,16 +483,22 @@ def train_member(
     seed: int,
     tag: str,
     y_override: np.ndarray | None = None,
+    on_epoch=None,
+    monitor_idx: np.ndarray | None = None,
 ) -> tuple[list[dict], float]:
     """Trains on `fit_idx` (already the bootstrap-resampled pool for this member, if bootstrapping is
     on), early-stops on `es_idx` -- disjoint from `fit_idx` and from the held-out val split, so model
     selection never touches either the rows this member was fit on or the rows the gates score
-    against."""
+    against. `monitor_idx` (the held-out val split) only feeds a "test_loss" to `on_epoch` for logging;
+    it never enters `history`, early stopping or weight selection."""
     stage1_fit = fit_idx[rows["stage"][fit_idx] == 1]
     s2_fit_all = fit_idx[rows["stage"][fit_idx] == 2]
     stage2_fit = s2_fit_all[~rows["wall_artifact"][s2_fit_all]]
     es_loss_idx = es_idx[~((rows["stage"][es_idx] == 2) & rows["wall_artifact"][es_idx])]
     assert len(es_loss_idx), f"{tag}: empty early-stopping set after dropping stage-2 wall_artifact rows"
+    mon_loss_idx = None
+    if monitor_idx is not None:
+        mon_loss_idx = monitor_idx[~((rows["stage"][monitor_idx] == 2) & rows["wall_artifact"][monitor_idx])]
 
     batch, mix1 = cfg_train["batch"], cfg_train["mix_stage1"]
     steps_per_epoch = max(1, int(len(stage1_fit) / max(1, round(batch * mix1))))
@@ -451,6 +543,23 @@ def train_member(
         if not (np.isfinite(tl) and np.isfinite(el)):
             raise RuntimeError(f"{tag}: non-finite loss at epoch {epoch} (train={tl}, es={el}) -- aborting")
         history.append({"epoch": epoch, "train_loss": tl, "es_loss": el})
+        if on_epoch is not None:
+            extra = {}
+            if mon_loss_idx is not None and len(mon_loss_idx):
+                with torch.no_grad():
+                    test_loss, _ = compute_loss(
+                        net,
+                        normalizer,
+                        rows,
+                        pose_all,
+                        mon_loss_idx,
+                        device,
+                        cfg_train["w_reward"],
+                        cfg_train["w_pose"],
+                        y_override,
+                    )
+                extra["test_loss"] = float(test_loss.item())
+            on_epoch({**history[-1], **extra})
         if el < best_es - 1e-6:
             best_es = el
             best_state = {k: v.detach().clone() for k, v in net.state_dict().items()}
@@ -485,6 +594,7 @@ def train_ensemble(
     device: str,
     seed0: int,
     tag: str,
+    logger: WandbLogger | None = None,
 ) -> tuple[list, list[list[dict]], list[float]]:
     """Bootstrap-resamples FIT groups per member (never the ES groups); early-stopping is always on
     the fixed `es_idx`; `val_idx` is used only to report each member's val AUROC (never for fitting or
@@ -497,13 +607,28 @@ def train_ensemble(
         net = net_cls(**net_kwargs).to(device)
         t0 = time.time()
         hist, best_es = train_member(
-            net, normalizer, rows, pose_all, idx_k, es_idx, cfg_train, device, seed, f"{tag}[{k}]"
+            net,
+            normalizer,
+            rows,
+            pose_all,
+            idx_k,
+            es_idx,
+            cfg_train,
+            device,
+            seed,
+            f"{tag}[{k}]",
+            on_epoch=logger.on_epoch_fn(f"{tag}/m{k}") if logger else None,
+            monitor_idx=val_idx,
         )
+        if logger:
+            logger.loss_plot(f"{tag}/m{k}")
         v_val = predict_v(net, normalizer, rows, val_idx, device)
         auc = roc_auc(rows["y"][val_idx], v_val)
         members.append(net)
         histories.append(hist)
         val_aurocs.append(auc)
+        if logger:
+            logger.summary({f"{tag}/m{k}/val_auroc": auc, f"{tag}/m{k}/best_es_loss": best_es})
         print(
             f"  {tag}[{k}] seed={seed} n_fit={len(idx_k)} epochs={len(hist)} "
             f"best_es_loss={best_es:.4f} val_auroc={auc:.4f} ({time.time() - t0:.1f}s)"
@@ -605,6 +730,7 @@ def main() -> None:
     p.add_argument("--config", type=Path, required=True)
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--overfit-test", action="store_true")
+    p.add_argument("--no-wandb", action="store_true", help="skip wandb even if the config enables it")
     args = p.parse_args()
     cfg = load_config(args.config)
     device = cfg.get("device", "cuda" if torch.cuda.is_available() else "cpu")
@@ -629,6 +755,12 @@ def main() -> None:
         return
 
     model_dir.mkdir(parents=True, exist_ok=True)
+    logger = WandbLogger(
+        cfg.get("wandb"),
+        cfg,
+        run_name=f"{root.name}/{model_dir.name}",
+        enabled=not (args.smoke or args.no_wandb),
+    )
     ctr = cfg["train"]
     es_frac = ctr.get("es_frac", 0.1)
     val_mask, es_mask, fit_mask, group_key, split_info = compute_split(
@@ -689,6 +821,7 @@ def main() -> None:
         device,
         1000,
         "value",
+        logger,
     )
     oracle_ctr = {**ctr, "max_epochs": ctr.get("oracle_max_epochs", ctr["max_epochs"])}
     print(
@@ -709,6 +842,7 @@ def main() -> None:
         device,
         2000,
         "oracle",
+        logger,
     )
 
     print("\n=== shuffled-label control (1 ValueNet member, fit AND es labels shuffled independently) ===")
@@ -732,7 +866,10 @@ def main() -> None:
         3000,
         "shuffled",
         y_shuffled,
+        on_epoch=logger.on_epoch_fn("shuffled/m0"),
+        monitor_idx=val_idx,
     )
+    logger.loss_plot("shuffled/m0")
     shuffled_val_v = predict_v(shuffled_net, normalizer, rows, val_idx, device)
     shuffled_auroc = roc_auc(rows["y"][val_idx], shuffled_val_v)  # vs REAL y: leakage check, expect ~0.5
     print(
@@ -828,6 +965,20 @@ def main() -> None:
     fig.savefig(model_dir / "curves.png", dpi=120)
     plt.close(fig)
     print(f"wrote {model_dir / 'curves.png'}")
+
+    logger.summary(
+        {
+            "value/val_auroc_ensemble": roc_auc(rows["y"][val_idx], val_pred["v_mean_all"]),
+            "oracle/val_auroc_ensemble": roc_auc(rows["y"][val_idx], val_pred["oracle_v_mean_all"]),
+            "shuffled/val_auroc_vs_real_y": shuffled_auroc,
+            "metric_check/auroc_vs_permuted_val_labels": metric_check_auroc,
+            "n_rows/fit": int(len(fit_idx)),
+            "n_rows/es": int(len(es_idx)),
+            "n_rows/val": int(len(val_idx)),
+        }
+    )
+    logger.log_image("curves", model_dir / "curves.png")
+    logger.finish()
 
     print(
         f"\nvalue AUROC per member: {[round(a, 3) for a in value_aurocs]}\n"

@@ -50,7 +50,7 @@ from ..utils import (
     get_output_shape,
     populate_queues,
 )
-from .configuration_diffusion import DiffusionConfig
+from .configuration_diffusion import LATENT_CONV_BACKBONE, DiffusionConfig
 
 
 class DiffusionPolicy(PreTrainedPolicy):
@@ -197,9 +197,7 @@ class DiffusionModel(nn.Module):
         # Build observation encoders (depending on which observations are provided).
         # `observation.state` is optional: an image-only (or env-state-only) policy has
         # `robot_state_feature is None`, so the state term contributes 0 to global_cond.
-        global_cond_dim = (
-            self.config.robot_state_feature.shape[0] if self.config.robot_state_feature else 0
-        )
+        global_cond_dim = self.config.robot_state_feature.shape[0] if self.config.robot_state_feature else 0
         if self.config.image_features:
             num_images = len(self.config.image_features)
             if self.config.use_separate_rgb_encoder_per_camera:
@@ -517,13 +515,16 @@ class DiffusionRgbEncoder(nn.Module):
             self.do_crop = False
 
         # Set up backbone.
-        backbone_model = getattr(torchvision.models, config.vision_backbone)(
-            weights=config.pretrained_backbone_weights
-        )
-        # Note: This assumes that the layer4 feature map is children()[-3]
-        # TODO(alexander-soare): Use a safer alternative.
-        self.backbone = nn.Sequential(*(list(backbone_model.children())[:-2]))
-        if config.use_group_norm:
+        if config.vision_backbone == LATENT_CONV_BACKBONE:
+            self.backbone = _latent_conv_backbone(next(iter(config.image_features.values())).shape[0])
+        else:
+            backbone_model = getattr(torchvision.models, config.vision_backbone)(
+                weights=config.pretrained_backbone_weights
+            )
+            # Note: This assumes that the layer4 feature map is children()[-3]
+            # TODO(alexander-soare): Use a safer alternative.
+            self.backbone = nn.Sequential(*(list(backbone_model.children())[:-2]))
+        if config.use_group_norm and config.vision_backbone != LATENT_CONV_BACKBONE:
             if config.pretrained_backbone_weights:
                 raise ValueError(
                     "You can't replace BatchNorm in a pretrained model without ruining the weights!"
@@ -576,6 +577,19 @@ class DiffusionRgbEncoder(nn.Module):
         # Final linear layer with non-linearity.
         x = self.relu(self.out(x))
         return x
+
+
+def _latent_conv_backbone(in_channels: int) -> nn.Sequential:
+    """Small from-scratch conv stack for pre-encoded latents (e.g. SD-VAE 4x32x32).
+
+    3x3 convs with GroupNorm (groups of 16 channels) + ReLU, one stride-2 stage: a 28x28 crop of a
+    32x32 latent comes out as a 512x14x14 map for SpatialSoftmax (the resnet18 path gives 512x3x3
+    from an 84x84 crop).
+    """
+    layers: list[nn.Module] = []
+    for c_in, c_out, stride in ((in_channels, 64, 1), (64, 128, 1), (128, 256, 2), (256, 512, 1)):
+        layers += [nn.Conv2d(c_in, c_out, 3, stride, 1), nn.GroupNorm(c_out // 16, c_out), nn.ReLU()]
+    return nn.Sequential(*layers)
 
 
 def _replace_submodules(

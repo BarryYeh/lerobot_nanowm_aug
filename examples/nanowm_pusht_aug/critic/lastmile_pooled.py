@@ -29,6 +29,12 @@ def main() -> None:
     ap.add_argument("--pairs", nargs="+", default=["W:R", "W:ctrl", "R:ctrl"])
     ap.add_argument("--draws", type=int, default=10_000)
     ap.add_argument("--bar", type=float, default=0.03, help="primary effect-size bar for the first pair")
+    ap.add_argument(
+        "--margin",
+        type=float,
+        default=None,
+        help="non-inferiority instead: primary met when the first pair's CI lower bound > -margin",
+    )
     a = ap.parse_args()
     S, MR = {}, {}
     for arm in a.arms:
@@ -63,7 +69,16 @@ def main() -> None:
         }
     first = a.pairs[0]
     pr = out["pairs"][first]
-    out["primary"] = {"pair": first, "bar": a.bar, "met": bool(pr["pooled"] >= a.bar and pr["ci95"][0] > 0)}
+    if a.margin is None:
+        out["primary"] = {
+            "pair": first,
+            "bar": a.bar,
+            "met": bool(pr["pooled"] >= a.bar and pr["ci95"][0] > 0),
+        }
+        rule = f"{first} >= +{a.bar * 100:.0f} pp and CI lower bound > 0"
+    else:
+        out["primary"] = {"pair": first, "margin": a.margin, "met": bool(pr["ci95"][0] > -a.margin)}
+        rule = f"non-inferiority: {first} CI lower bound > -{a.margin * 100:g} pp"
     (a.eval_dir / "pooled.json").write_text(json.dumps(out, indent=1))
     lines = [
         f"# Pooled over seeds {a.seeds} ({n} paired episodes each)",
@@ -93,8 +108,7 @@ def main() -> None:
         )
     lines += [
         "",
-        f"PRIMARY ({first} >= +{a.bar * 100:.0f} pp and CI lower bound > 0): "
-        f"{'MET' if out['primary']['met'] else 'NOT MET'}",
+        f"PRIMARY ({rule}): {'MET' if out['primary']['met'] else 'NOT MET'}",
     ]
     (a.eval_dir / "pooled.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))

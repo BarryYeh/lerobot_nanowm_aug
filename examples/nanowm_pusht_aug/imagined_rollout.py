@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""NanoWM imagined-rollout generation -- all three modes (closed-loop, open-loop, encode) live here.
+"""NanoWM imagined-rollout generation -- all four modes (closed-loop, open-loop, encode, recon) live here.
 
 Runs in the `nanowm` venv (`uv sync` in third_party/nano-world-model: Python 3.11, torch 2.7.1 /
 diffusers 0.29.2; it cannot share the lerobot venv, which needs Python >= 3.12), so this file must
@@ -17,7 +17,8 @@ in a work dir:
     driver writes  work/stop                 -> worker exits
 
 One round generates exactly ONE frame per branch (`n_generate_frames=1`) and the H-frame context
-window slides, so from round H onwards the context is entirely self-generated.
+window slides, so from round H onwards the context is entirely self-generated. The worker is unseeded
+unless `--seed` is given (`seed_wm`); the driver's `--torch-seed` seeds only the policy.
 
 OPEN LOOP (`open-loop`) -- no policy in the loop: branch off a real pusht_noise trajectory and
 roll NanoWM forward under the demonstrator's own actions plus Gaussian noise. Kept for world-model
@@ -49,6 +50,9 @@ and writes back `latents` (...,4,32,32) float16 plus scalar metadata (seed, vae 
 factor, img_size). The torch RNG is seeded once before encoding so `posterior.sample()` is
 reproducible.
 
+RECON (`recon`) -- SD-VAE encode -> decode round trip of real frames through the closed-loop encode and
+decode paths: the frame a perfect world model would show, i.e. the VAE's own share of the blur.
+
 Run:
     NW=third_party/nano-world-model/.venv/bin/python
     P=examples/nanowm_pusht_aug
@@ -60,6 +64,7 @@ Run:
     $NW $P/imagined_rollout.py open-loop --num-samples 300 --out $P/imagined/smoke
 
     $NW $P/imagined_rollout.py encode --in shard_0.npz --out latents_0.npz --key frames_224
+    $NW $P/imagined_rollout.py recon --in sim.npz --out recon.npz --key frames_224
 """
 
 from __future__ import annotations
@@ -210,6 +215,29 @@ def _save_atomic(path: Path, **arrays) -> None:
     tmp.rename(path)
 
 
+def seed_wm(seed: int | None, offset: int) -> None:
+    """`closed-loop --seed`: reseed torch's global RNG (CPU + every CUDA device) to `seed + offset`.
+    offset 0 = before the context VAE encode (`posterior.sample()`), 1 + r = before round r's
+    `dfot_sample` (initial noise + history-stabilization noise both draw from it). Reseeding per
+    round makes round r independent of how much RNG earlier rounds used. `seed=None` (the default)
+    is a no-op, i.e. the original unseeded worker. Determinism holds for a fixed (bs, wm_batch) layout:
+    the noise is drawn per sub-batch, so a branch's draw depends on its row in the batch."""
+    if seed is not None:
+        torch.manual_seed(seed + offset)
+
+
+def decode_to_224(vae, lat: torch.Tensor, vae_prec: str, chunk: int) -> np.ndarray:
+    """(n,1,Cz,Sz,Sz) latents -> (n,224,224,3) uint8: SD-VAE decode, bilinear resize img_size -> 224,
+    quantize. The decode path of every closed-loop frame, shared with `recon` so a VAE round trip of a
+    real frame goes through exactly the same pixels pipeline as a generated one."""
+    rgb_parts = []
+    for c0 in range(0, len(lat), chunk):
+        ch = decode_latents(vae, lat[c0 : c0 + chunk], vae_precision=vae_prec)[:, 0]
+        ch = torch.nn.functional.interpolate(ch, size=IMAGE_HW, mode="bilinear", align_corners=False)
+        rgb_parts.append((ch.clamp(0, 1) * 255).to(torch.uint8).cpu())
+    return torch.cat(rgb_parts).permute(0, 2, 3, 1).numpy()
+
+
 def closed_loop(args) -> None:
     """Persistent worker: advance every branch one imagined frame per round, driven by the
     lerobot-venv driver through .npz files in `args.work`."""
@@ -233,6 +261,7 @@ def closed_loop(args) -> None:
     ]  # only (bs,H,224,224,3) accepted; single-frame refused below
     multi = seed_frames.ndim == 5
     bs = len(seed_frames)
+    seed_wm(args.seed, 0)
     if multi:  # (bs,Hs,224,224,3) real context frames
         Hs = seed_frames.shape[1]
         gen_lat = encode_context_frames(seed_frames, vae, dev, img_size, vae_prec, args.wm_batch)
@@ -249,7 +278,7 @@ def closed_loop(args) -> None:
             f"it to {H} context slots fabricates a static past -- the original alignment bug. "
             "Send (bs,H,224,224,3) real frames fi sim-steps apart instead."
         )
-    print(f"[wm] seeded bs={bs}  multi_context={multi}", flush=True)
+    print(f"[wm] seeded bs={bs}  multi_context={multi}  seed={args.seed}", flush=True)
 
     for r in range(args.rounds):
         if not _wait(work / f"chunks_{r}.npz"):
@@ -257,6 +286,7 @@ def closed_loop(args) -> None:
             return
         d = np.load(work / f"chunks_{r}.npz")
         win = torch.from_numpy(d["win"].astype(np.float32)).to(dev)  # (bs,nf,fi*2)
+        seed_wm(args.seed, 1 + r)
 
         # sub-batch the NanoWM forward over branches (GPU memory)
         parts = []
@@ -282,12 +312,7 @@ def closed_loop(args) -> None:
         new_lat = torch.cat(parts, dim=0)  # (bs,1,Cz,Sz,Sz)
         gen_lat = torch.cat([gen_lat, new_lat], dim=1)
 
-        rgb_parts = []
-        for c0 in range(0, bs, args.decode_chunk):
-            ch = decode_latents(vae, new_lat[c0 : c0 + args.decode_chunk], vae_precision=vae_prec)[:, 0]
-            ch = torch.nn.functional.interpolate(ch, size=IMAGE_HW, mode="bilinear", align_corners=False)
-            rgb_parts.append((ch.clamp(0, 1) * 255).to(torch.uint8).cpu())
-        rgb = torch.cat(rgb_parts).permute(0, 2, 3, 1).numpy()  # (bs,224,224,3) u8
+        rgb = decode_to_224(vae, new_lat, vae_prec, args.decode_chunk)  # (bs,224,224,3) u8
 
         _cf = [coverage_from_frame(rgb[b]) for b in range(bs)]
         cov = np.array([c["coverage_cal"] for c in _cf], np.float32)
@@ -504,7 +529,30 @@ def encode(args) -> None:
     print(f"[encode] {frames.shape} u8 -> {lat.shape} f16 in {dt:.2f}s -> {args.out}", flush=True)
 
 
-def main() -> None:
+def recon(args) -> None:
+    """SD-VAE round trip of real frames: npz `--key` (...,224,224,3) u8 -> `frames` of the same shape.
+
+    Encode = `encode_context_frames` (closed-loop context path), decode = `decode_to_224` (closed-loop
+    generated-frame path), so the output is what a PERFECT world model would show after NanoWM's own
+    decode: the VAE's share of any blur, separate from the generator's (eval/wm_seed_diversity.py).
+    """
+    dev = args.device
+    torch.manual_seed(args.seed)
+    cfg, vae = load_vae(dev)
+    img_size = int(cfg.model.image_size)
+    vae_prec = cfg.experiment.infra.vae_precision
+    frames = np.load(args.inp)[args.key]
+    if frames.shape[-3:] != (224, 224, 3):
+        raise SystemExit(f"[recon] expected (...,224,224,3), got {frames.shape} for key {args.key!r}")
+    flat = frames.reshape((-1,) + frames.shape[-3:])[:, None]  # (N,1,224,224,3)
+    lat = encode_context_frames(flat, vae, dev, img_size, vae_prec, args.batch)  # (N,1,Cz,Sz,Sz)
+    out = decode_to_224(vae, lat, vae_prec, args.batch).reshape(frames.shape)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(args.out, frames=out, seed=np.int64(args.seed))
+    print(f"[recon] {frames.shape} -> {args.out}", flush=True)
+
+
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     modes = p.add_subparsers(dest="mode", required=True)
 
@@ -519,6 +567,13 @@ def main() -> None:
         "--save-latents",
         action="store_true",
         help="after the last round write work/latents.npz (bs,H+rounds,Cz,Sz,Sz) f16 (value-model stage 2)",
+    )
+    cl.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="torch seed for the world model: seed before the context encode, seed+1+r before round r "
+        "(see `seed_wm`). None (default) = unseeded, the original behaviour",
     )
     cl.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     cl.set_defaults(fn=closed_loop)
@@ -551,7 +606,19 @@ def main() -> None:
     ec.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ec.set_defaults(fn=encode)
 
-    args = p.parse_args()
+    rc = modes.add_parser("recon", help="SD-VAE encode->decode round trip of npz frames (closed-loop paths)")
+    rc.add_argument("--in", dest="inp", type=Path, required=True, help="input npz holding `--key`")
+    rc.add_argument("--out", type=Path, required=True, help="output npz with `frames` (same shape, u8)")
+    rc.add_argument("--key", default="frames_224", help="npz key holding (...,224,224,3) u8 frames")
+    rc.add_argument("--batch", type=int, default=64, help="frames per VAE encode/decode sub-batch")
+    rc.add_argument("--seed", type=int, default=0, help="torch RNG seed for posterior.sample()")
+    rc.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    rc.set_defaults(fn=recon)
+    return p
+
+
+def main() -> None:
+    args = build_parser().parse_args()
     torch.set_grad_enabled(False)
     args.fn(args)
 

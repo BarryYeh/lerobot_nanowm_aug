@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from lerobot.configs import NormalizationMode, PreTrainedConfig
 from lerobot.optim import AdamConfig, DiffuserSchedulerConfig
 
+LATENT_CONV_BACKBONE = "latent_conv"
+
 
 @PreTrainedConfig.register_subclass("diffusion")
 @dataclass
@@ -53,7 +55,10 @@ class DiffusionConfig(PreTrainedConfig):
             the output data name, and the value is PolicyFeature, which consists of FeatureType and shape attributes.
         normalization_mapping: A dictionary that maps from a str value of FeatureType (e.g., "STATE", "VISUAL") to
             a corresponding NormalizationMode (e.g., NormalizationMode.MIN_MAX)
-        vision_backbone: Name of the torchvision resnet backbone to use for encoding images.
+        vision_backbone: Name of the torchvision resnet backbone to use for encoding images, or
+            "latent_conv" for a small from-scratch GroupNorm conv stack meant for pre-encoded latent
+            "images" (e.g. 4x32x32 SD-VAE latents); "latent_conv" requires
+            `pretrained_backbone_weights=None`.
         resize_shape: (H, W) shape to resize images to as a preprocessing step for the vision
             backbone. If None, no resizing is done and the original image resolution is used.
         crop_ratio: Ratio in (0, 1] used to derive the crop size from resize_shape
@@ -168,9 +173,16 @@ class DiffusionConfig(PreTrainedConfig):
         super().__post_init__()
 
         """Input validation (not exhaustive)."""
-        if not self.vision_backbone.startswith("resnet"):
+        if self.vision_backbone == LATENT_CONV_BACKBONE:
+            if self.pretrained_backbone_weights is not None:
+                raise ValueError(
+                    f"`vision_backbone={LATENT_CONV_BACKBONE!r}` is trained from scratch; "
+                    f"set `pretrained_backbone_weights=None`. Got {self.pretrained_backbone_weights}."
+                )
+        elif not self.vision_backbone.startswith("resnet"):
             raise ValueError(
-                f"`vision_backbone` must be one of the ResNet variants. Got {self.vision_backbone}."
+                f"`vision_backbone` must be one of the ResNet variants or {LATENT_CONV_BACKBONE!r}. "
+                f"Got {self.vision_backbone}."
             )
 
         supported_prediction_types = ["epsilon", "sample"]

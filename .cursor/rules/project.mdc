@@ -35,6 +35,16 @@ and any command that may take more than a minute.
 - Do not run long tasks directly in the foreground agent shell; poll the tmux session/log instead.
 - Quick commands (git, ls, small tests, lint) may still run directly.
 
+### Progress check every 30 minutes
+
+After launching a long-running task in tmux, use the `/loop` skill to check progress every 30 minutes
+(e.g. `/loop 30m check tmux session <task_name>`). Each check should:
+
+- Confirm the session is alive (`tmux ls`) and read the latest log lines (`tail -n 50 logs/<task_name>.log`).
+- Report step/epoch, loss or key metrics, and any errors, NaNs, or stalls (log not updated since last check).
+- If the task crashed or stalled, report the cause and propose a fix; do not restart it silently.
+- When the task finishes, summarize the results and stop the loop.
+
 ## Code layout (`src/lerobot/`)
 
 - `scripts/` CLI entry points (`lerobot-train`, `lerobot-eval`, `lerobot-record`)
