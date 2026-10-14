@@ -21,13 +21,14 @@ audited in `../eval/README.md`; the shared values live in `configs/nanowm_pusht_
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `run_cupid_filter.sh <config.yaml> [stage ...]`          | CUPID filtering: record / featurize / replicate / score / build / finetune / eval / report                                                           |
 | `run_cupid_select.sh <config.yaml> [stage ...]`          | CUPID add-one-in in the top-wall band: wait_stage1 / seeds / generate / merge / pack / record / featurize / score / build / finetune / eval / report |
-| `run_cupid_bidir.sh <shared_config.yaml> [stage ...]`    | CUPID LOO vs AOI on one pool: sidecar / record / featurize / replicate / score / gate / build / finetune / eval / report                             |
 | `run_dose464.sh`                                         | equal-dose (N=464) untrimmed vs trimmed vs verified                                                                                                  |
 | `run_dose500.sh`                                         | generate a fresh pool, then the same three arms at N=500                                                                                             |
 | `run_pad_hold.sh`                                        | pad-mode and `n_action_steps` sweep at drop=9                                                                                                        |
 | `run_hesitation_validation.sh`                           | whether the augmented policy hesitates near the goal                                                                                                 |
 | `run_eval_suite.sh [rollouts_per_init] [n_random]`       | headline `a` vs `a+aug` at the fps-2 control rate, both init distributions                                                                           |
 | `run_value_model.sh <config.yaml> [stage ...] [--smoke]` | value/reward-model (V/RM) on NanoWM latents: seeds / collect / encode / imagine / label / train / report                                             |
+
+Ridge scoring (`cupid_select_topband_ridge.yaml`) and the bidirectional LOO/AOI driver (`run_cupid_bidir.sh` and `cupid_bidir_verified464*.yaml`) were removed after tag `archive/pre-cleanup`. `attribution/build_bidir_datasets.py` remains and can be called by hand.
 
 ## Note on the `proto_` prefix
 

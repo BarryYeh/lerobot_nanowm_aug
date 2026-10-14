@@ -52,11 +52,7 @@ must be passed explicitly.
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `nanowm_pusht_common.yaml`         | the shared base; every other file `extends:` it                                                                                    |
 | `cupid_filter_untrimmed464.yaml`   | `run_cupid_filter.sh` → record / featurize / score / build_filtered_datasets / diffusion_influence_loss                            |
-| `cupid_select_topband.yaml`        | `run_cupid_select.sh` → make_topband_seeds / record / featurize / score / build_selected_datasets (+ ridge override)               |
-| `cupid_select_topband_ridge.yaml`  | `run_cupid_select.sh` ridge score path                                                                                             |
-| `cupid_bidir_verified464.yaml`     | `run_cupid_bidir.sh` → build_bidir_datasets                                                                                        |
-| `cupid_bidir_verified464_loo.yaml` | `run_cupid_bidir.sh` LOO direction (record / featurize / score)                                                                    |
-| `cupid_bidir_verified464_aoi.yaml` | `run_cupid_bidir.sh` AOI direction (record / featurize / score)                                                                    |
+| `cupid_select_topband.yaml`        | `run_cupid_select.sh` → make_topband_seeds / record / featurize / score / build_selected_datasets                                  |
 | `value_model_topband.yaml`         | `run_value_model.sh` → collect_value_states / make_topband_seeds / label_imagined_branches / train_value_model / value_gate_report |
 
 The six unread per-script yaml (closed_loop_rollout, mode_probe, agent_value_map, ood_failure_map,

@@ -1,8 +1,0 @@
-# AOI direction: theta = the base policy, which never saw the pool; the pool is a HOLDOUT, scored but
-# OUTSIDE XtX (CUPID's hessian_lim). Needs the ridge (xtx.lambda_rel) against holdout leverage.
-extends: cupid_bidir_verified464.yaml
-out_dir: outputs/cupid/bidir_verified464/aoi
-ckpt: outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model   # never saw the pool
-train_repo_id: local/pusht_imgonly
-pool_repo_id: local/pusht_cl_verified464     # holdout: scored, outside XtX
-xtx: {include_pool: false}

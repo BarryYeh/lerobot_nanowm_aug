@@ -1,8 +1,0 @@
-# LOO direction: theta trained on real + all 464 verified pairs; the pool is its imagined tail and
-# sits INSIDE XtX (the model learned it). Scores = which pairs helped, in hindsight.
-extends: cupid_bidir_verified464.yaml
-out_dir: outputs/cupid/bidir_verified464/loo
-ckpt: outputs/train/cl_aug/verified464_d8_s1000/checkpoints/last/pretrained_model
-train_repo_id: local/pusht_plus_verified464   # theta trained on real + all 464: pool = its imagined tail
-pool_repo_id: null
-xtx: {include_pool: true}
