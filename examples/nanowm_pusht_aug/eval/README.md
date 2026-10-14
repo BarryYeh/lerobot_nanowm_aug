@@ -15,7 +15,7 @@ read one value without paying for `import lerobot`.
 | ------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------- |
 | `--device`                     | 7 py files                                                                   | `cuda`                                          |
 | `--max-steps` / episode length | agent_value_map, make_seeds, mode_probe, ood_failure_map                     | 300                                             |
-| `BASE_CKPT`                    | agent_value_map, mode_probe, wm_fidelity_ood, finetune_cl.sh, run_dose500.sh | `pusht_imgonly/obs1_s100000`                    |
+| `BASE_CKPT`                    | agent_value_map, mode_probe, wm_fidelity_ood, finetune_cl.sh         | `pusht_imgonly/obs1_s100000`                    |
 | `T_OUTLINE`                    | ood_failure_map, wm_fidelity_ood (**byte-identical**)                        | 8-point T outline                               |
 | `AGENT_BOX`                    | agent_value_map, wm_fidelity_ood                                             | `(22.0, 489.0)`                                 |
 | `IMG` / render size            | mode_probe, wm_fidelity_ood                                                  | 224                                             |
@@ -24,14 +24,14 @@ read one value without paying for `import lerobot`.
 | `--num-sampling-steps`         | closed_loop_rollout, wm_fidelity_ood                                         | 30                                              |
 | `--wm-batch`                   | closed_loop_rollout, wm_fidelity_ood                                         | 24                                              |
 | `NANOWM_PY`                    | closed_loop_rollout, wm_fidelity_ood                                         | `third_party/nano-world-model/.venv/bin/python` |
-| eval protocol                  | proto_eval_pusht.sh, run_pad_hold.sh, run_dose\*.sh                          | see note below                                  |
-| finetune hyperparams           | finetune_cl.sh, run_dose464/500.sh                                           | seed 1000, 20k steps, lr 1e-5, bs 64, drop 8    |
+| eval protocol                  | proto_eval_pusht.sh, run_pad_hold.sh                                 | see note below                                  |
+| finetune hyperparams           | finetune_cl.sh                                                       | seed 1000, 20k steps, lr 1e-5, bs 64, drop 8    |
 | train hyperparams              | proto_train_pusht.sh, proto_train_pushtnoise.sh, train_baseline.sh           | 100k steps, bs 64, horizon 16, na 8             |
-| `lerobot_home`                 | finetune_cl.sh, all three train scripts, run_dose\*.sh                       | `~/.cache/huggingface/lerobot`                  |
+| `lerobot_home`                 | finetune_cl.sh, all three train scripts                              | `~/.cache/huggingface/lerobot`                  |
 | `dataset_dir`                  | train_baseline.sh, run_eval_suite.sh, imagined_rollout.py                    | the DINO-WM archive                             |
 
 Eval protocol facts: `proto_eval_pusht.sh` defaults to N=200 and leaves `n_action_steps` unset (the
-checkpoint's own value is used); `run_dose464.sh` and `run_dose500.sh` pass 200 and no NA. The
+checkpoint's own value is used). `run_dose464.sh` and `run_dose500.sh` (tag `archive/pre-cleanup`) pass 200 and no NA. The
 `eval:` block of `nanowm_pusht_common.yaml` (n=1000, na=10) is the protocol for comparison runs and
 must be passed explicitly.
 

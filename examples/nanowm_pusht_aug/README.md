@@ -178,7 +178,7 @@ value, so all 16 slots are consistent.
 
 **`drop` must match on both arms.** `scripts/finetune_cl.sh <arm|repo=local/<id>> <seed> <steps> <drop>` requires
 `drop`; Control has to be trained at the same value as the augmented arm. Datasets packed
-with `--ep-len 9` (`run_dose464.sh`, `run_dose500.sh`) pass `drop=8` explicitly. All four
+with `--ep-len 9` (`run_dose464.sh` and `run_dose500.sh`, tag `archive/pre-cleanup`) pass `drop=8` explicitly. All four
 arguments are positional, so seed and steps must be given too.
 
 ```bash
