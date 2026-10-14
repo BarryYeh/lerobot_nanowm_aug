@@ -181,4 +181,4 @@ outputs/
 codes/
 
 # NanoWM Hub weights (pinned in configs/nanowm_pusht_common.yaml), not vendored
-third_party/nano-world-model/ckpt/
+third_party/

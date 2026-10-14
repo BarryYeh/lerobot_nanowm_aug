@@ -1,0 +1,7 @@
+{
+  "language": "繁體中文",
+  "env": {
+    "HF_DEFAULT_REPO": "barry0916/nanowm-aug-assets",
+    "HF_DEFAULT_REPO_TYPE": "model"
+  }
+}
