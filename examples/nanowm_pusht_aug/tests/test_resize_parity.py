@@ -1,4 +1,4 @@
-"""closed_loop_rollout._to96 and pack_closed_loop.to96 must match (M3)."""
+"""closed_loop_rollout._to96 is pack_closed_loop.to96 (bilinear 224 to 96)."""
 
 from __future__ import annotations
 

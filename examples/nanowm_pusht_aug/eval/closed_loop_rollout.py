@@ -62,6 +62,7 @@ from lerobot.utils.constants import ACTION, OBS_IMAGES
 _PROJ = Path(__file__).resolve().parent.parent  # examples/nanowm_pusht_aug
 sys.path.insert(0, str(_PROJ))
 from datagen import action_convert as ac  # noqa: E402
+from datagen.pack_closed_loop import to96 as _to96  # noqa: E402
 from nwaug.pusht_state import load_seeds, place_body, read_body  # noqa: E402
 
 NANOWM_PY = Path(__file__).resolve().parents[3] / "third_party/nano-world-model/.venv/bin/python"
@@ -93,12 +94,6 @@ def _save_atomic(path: Path, **a):
     tmp = path.with_suffix(".tmp.npz")
     np.savez(tmp, **a)
     tmp.rename(path)
-
-
-def _to96(f224: np.ndarray) -> np.ndarray:
-    t = torch.from_numpy(f224).float().permute(2, 0, 1)[None]
-    t = torch.nn.functional.interpolate(t, size=(96, 96), mode="bilinear", align_corners=False)
-    return t[0].permute(1, 2, 0).round().clamp(0, 255).byte().numpy()
 
 
 @torch.no_grad()
