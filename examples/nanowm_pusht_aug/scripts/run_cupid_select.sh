@@ -45,6 +45,23 @@ RAW=$OUT/pool_raw
 ckpt_of() { echo "outputs/train/cl_aug/$1_d${DROP}_s${SEED}/checkpoints/last/pretrained_model"; }
 arms() { $PY $A/build_selected_datasets.py --config "$CFG" --list; }
 
+eval_pusht() {  # <ckpt> <out> <n> <seed> [n_action_steps]
+  local ckpt="$1" out="$2" n="$3" seed="$4" na="${5:-}"
+  mkdir -p "$out"
+  echo "eval $ckpt  n_episodes=$n  seed=$seed  n_action_steps=${na:-ckpt} -> $out"
+  uv run --extra training lerobot-eval \
+    --policy.path="$ckpt" \
+    --policy.device=cuda \
+    --policy.use_amp=false \
+    ${na:+--policy.n_action_steps="$na"} \
+    --env.type=pusht \
+    --eval.n_episodes="$n" \
+    --eval.batch_size=50 \
+    --eval.use_async_envs=false \
+    --seed="$seed" \
+    --output_dir="$out" 2>&1 | tee "$out/eval.log"
+}
+
 for stage in $STAGES; do
   echo "=== $stage $(date +%H:%M) ==="
   case "$stage" in
@@ -127,7 +144,7 @@ PY
       fi
       for tag in $SELECT_TAGS a_real_only; do
         [ -f "$OUT/eval_random/$tag/eval_info.json" ] && { echo "skip $tag random (done)"; continue; }
-        bash $S/proto_eval_pusht.sh "$(ckpt_of "$tag")" "$OUT/eval_random/$tag" "$(y eval.n_episodes)" "$(y eval.seed)" "$(y eval.n_action_steps)"
+        eval_pusht "$(ckpt_of "$tag")" "$OUT/eval_random/$tag" "$(y eval.n_episodes)" "$(y eval.seed)" "$(y eval.n_action_steps)"
       done
       ;;
     report)

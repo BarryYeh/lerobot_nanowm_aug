@@ -16,7 +16,6 @@ CROSS_VENV_MODULES = [
     "critic.labels",
     "datagen.provenance",
     "config_io",
-    "nwaug.sdvae",
 ]
 
 

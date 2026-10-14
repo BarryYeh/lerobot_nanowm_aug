@@ -2,7 +2,7 @@
 """lerobot-eval with per-episode STEP counts (eval_info.json only stores success / reward).
 
 Wraps `lerobot.scripts.lerobot_eval.rollout` (episode i of batch b still uses seed start_seed + b*batch + i, so
-the episodes are the ones `proto_eval_pusht.sh` ran) and records, per episode, the first step at which
+the episodes are the ones stock `lerobot-eval` ran) and records, per episode, the first step at which
 `is_success` was True. Takes the same CLI as lerobot-eval; `--output_dir` receives success_steps.npz:
 
   seed (N,), success (N,) bool, success_step (N,) int32 (env steps taken when success first fired; -1 = none),

@@ -15,7 +15,7 @@ Mixing them silently shifts the T by about +45 px (the local CoG offset) -- see
 ``ood_failure_map.py`` ``--ood-range`` docstring. Angle is always assigned before
 position because rotating an offset-CoG body about the origin would displace it.
 
-Replaces: closed-loop / make_topband / label / proto_filter_roc / eval_baseline
+Replaces: closed-loop / make_topband / label / proto_filter_roc
 inline placement (body); ``ood_failure_map.set_state`` / ``sim_state`` (CoG);
 ``label_imagined_branches.body_state`` and closed-loop anchor read-back (body);
 seed ``np.savez`` / ``np.load`` of ``states`` / ``cog_states``.

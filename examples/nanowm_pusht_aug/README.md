@@ -101,48 +101,19 @@ get grads) → `select_action` all work; a 3-step `lerobot-train` run completes.
 
 ## Scripts
 
-### `datagen/run_converter.py pusht-noise`
+### `datagen/run_converter.py pusht-imgonly`
 
-`pusht_noise/{train,val}` → `LeRobotDataset` (mirrors `lerobot/pusht` schema at 224²).
-All dataset converters share `datagen/dataset_converter.py` (`LeRobotDatasetConverter`)
-and are dispatched by `datagen/run_converter.py <name>` (`--list` for the names).
-
-**Frame rate is sub-sampled to match NanoWM.** NanoWM's PushT checkpoint runs at
-`frame_interval=5` (1 NanoWM step = 5 sim-steps), so its _generated_ frames are 5
-sim-steps apart. `--frame-interval 5` (default) sub-samples the real mp4s with the
-same stride → **fps 2**, so real and imagined episodes share one frame rate and
-`n_obs_steps` / `horizon` mean the same real-time window in both. `--frame-interval 1`
-keeps native fps 10.
+`lerobot/pusht` → `local/pusht_imgonly` (drop `observation.state`). Dataset converters
+share `datagen/dataset_converter.py` (`LeRobotDatasetConverter`) and are dispatched by
+`datagen/run_converter.py <name>` (`--list` for the names).
 
 ```bash
-# smoke test
-uv run python examples/nanowm_pusht_aug/datagen/run_converter.py pusht-noise \
-    --splits val --max-episodes 20 --overwrite
-
-# full, fps-2 matched to NanoWM (repo_id -> local/pusht_noise_224_fi5)
-uv run python examples/nanowm_pusht_aug/datagen/run_converter.py pusht-noise \
-    --splits train val --frame-interval 5 --overwrite
+uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.py \
+    pusht-imgonly --overwrite
 ```
 
-Output feature schema:
-
-| key                    | shape             | note                                                                    |
-| ---------------------- | ----------------- | ----------------------------------------------------------------------- |
-| `observation.image`    | video (224,224,3) | decoded to CHW `[0,1]` on load                                          |
-| `observation.state`    | (2,)              | agent xy — `lerobot/pusht` compatible                                   |
-| `action`               | (2,)              | absolute target xy at the **end** of each 5-step window (`--action-at`) |
-| `observation.pose`     | (5,)              | full env state, ignored by image-only policy                            |
-| `observation.velocity` | (2,)              | agent velocity, ignored by image-only policy                            |
-
-`--minimal` drops `pose`/`velocity`; **`--drop-state`** keeps only `observation.image`
-
-- `action` (repo_id gets `_imgonly`) — the dataset for Task #1.
-  `--action-at {end,start,next_agent_pos}` selects how the coarse action is picked from
-  the 5 sim-step targets in each window (`end` = demonstrator's target by window end;
-  `next_agent_pos` = most eval-consistent).
-
-Coarse-frame agent motion is ~30–120 px per step (0.5 s), well within a held-target
-PD controller's reach.
+Output feature schema: `observation.image` video (96,96,3) and `action` (2,) at native fps 10.
+No `observation.state`, so the policy factory builds an image-only diffusion policy.
 
 ### `datagen/pack_closed_loop.py` -- closed-loop imagined data
 
@@ -192,12 +163,11 @@ bash examples/nanowm_pusht_aug/scripts/finetune_cl.sh a        1000 20000 9
 
 ## Next steps
 
-1. **T1** — image-only diffusion policy baseline (`a`). Build the dataset then run
-   `train_baseline.sh` (>=3 seeds), eval each on gym_pusht at 224:
+1. **T1** — image-only diffusion policy baseline (`a`). Build `local/pusht_imgonly`
+   then train / eval from `ckpt.base`:
    ```bash
-   uv run python examples/nanowm_pusht_aug/datagen/run_converter.py pusht-noise \
-       --splits train val --frame-interval 5 --drop-state --overwrite
-   bash examples/nanowm_pusht_aug/scripts/train_baseline.sh 100000
+   uv run --extra training python examples/nanowm_pusht_aug/datagen/run_converter.py \
+       pusht-imgonly --overwrite
    ```
 2. **T3** — policy sim-rollout in nano-world-model's `PushTEnv` (render_size 224) to
    collect context frames + visited states.

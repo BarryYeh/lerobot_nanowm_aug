@@ -36,7 +36,7 @@ fidelity checks and as the fps-2 data path (stage 2 = `datagen/run_converter.py 
   5. VAE-decode -> RGB, resize 256 -> 224.
   6. PD-replay the kinematic, block-independent agent from the real start state driven by the same
      perturbed actions -> exact agent_pos at every 10 Hz step; the absolute-target action label is
-     `agent_pos[t0+4] + rel_px[t0+4]` (`--action-at end`, matching run_converter.py pusht-noise).
+     `agent_pos[t0+4] + rel_px[t0+4]` (`--action-at end`).
   7. Keep only generated frames -> one imagined episode (fps 2, 224x224, image-only).
 
 Output: <out>/shard_*.npz with images (N,224,224,3) u8, actions (N,2) f32, ep_lens (E,) i32,
@@ -534,7 +534,7 @@ def recon(args) -> None:
 
     Encode = `encode_context_frames` (closed-loop context path), decode = `decode_to_224` (closed-loop
     generated-frame path), so the output is what a PERFECT world model would show after NanoWM's own
-    decode: the VAE's share of any blur, separate from the generator's (eval/wm_seed_diversity.py).
+    decode: the VAE's share of any blur, separate from the generator's.
     """
     dev = args.device
     torch.manual_seed(args.seed)

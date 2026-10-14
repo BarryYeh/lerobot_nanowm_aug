@@ -37,6 +37,23 @@ REFS="a_real_only untrimmed464"  # existing arms, re-evaluated under the same pr
 arms() { $PY $A/build_filtered_datasets.py --config "$CFG" --list; }
 ckpt_of() { echo "outputs/train/cl_aug/$1_d${DROP}_s${SEED}/checkpoints/last/pretrained_model"; }
 
+eval_pusht() {  # <ckpt> <out> <n> <seed> [n_action_steps]
+  local ckpt="$1" out="$2" n="$3" seed="$4" na="${5:-}"
+  mkdir -p "$out"
+  echo "eval $ckpt  n_episodes=$n  seed=$seed  n_action_steps=${na:-ckpt} -> $out"
+  uv run --extra training lerobot-eval \
+    --policy.path="$ckpt" \
+    --policy.device=cuda \
+    --policy.use_amp=false \
+    ${na:+--policy.n_action_steps="$na"} \
+    --env.type=pusht \
+    --eval.n_episodes="$n" \
+    --eval.batch_size=50 \
+    --eval.use_async_envs=false \
+    --seed="$seed" \
+    --output_dir="$out" 2>&1 | tee "$out/eval.log"
+}
+
 for stage in $STAGES; do
   echo "=== $stage ==="
   case "$stage" in
@@ -52,7 +69,7 @@ for stage in $STAGES; do
     eval)
       for tag in $REFS $(arms | sed 's#^local/##'); do
         [ -f "$OUT/eval/$tag/eval_info.json" ] && { echo "skip $tag (done)"; continue; }
-        bash $S/proto_eval_pusht.sh "$(ckpt_of "$tag")" "$OUT/eval/$tag" "$(y eval.n_episodes)" "$(y eval.seed)" "$(y eval.n_action_steps)"
+        eval_pusht "$(ckpt_of "$tag")" "$OUT/eval/$tag" "$(y eval.n_episodes)" "$(y eval.seed)" "$(y eval.n_action_steps)"
       done ;;
     report)    uv run python $A/paired_report.py "$OUT" --ref a_real_only ;;
     *) echo "unknown stage: $stage"; exit 1 ;;

@@ -4,7 +4,7 @@
 Each accepted start's 12 candidates are re-imagined with exactly the worker inputs of the original last-mile run
 (<lastmile>/imag/sigma*/work: seeds_expanded.npz = 3 real context frames, chunks_{0,1}.npz = the action windows the
 worker conditioned on), replicated S times in one worker batch with --seed (every replica draws other noise rows,
-i.e. S WM seeds; same mechanism as eval/wm_seed_diversity.py). Only the WM noise changes.
+i.e. S WM seeds; same mechanism as `wm_fidelity_ood.run_worker`). Only the WM noise changes.
 
   run      one sigma (optionally one part of its rows) -> <out>/multiseed/ms_sigma<X>_p<k>.npz: sid, cand, cov (n,S,2)
   analyze  joins the parts with <out>/sim_truth.json (simulator replay of every candidate, 1 and 2 rounds) and writes

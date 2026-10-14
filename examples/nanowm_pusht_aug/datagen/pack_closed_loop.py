@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 """Pack ACCEPTED closed-loop imagined rollouts into a LeRobotDataset (lerobot venv).
 
-Successor to `pack_imagined.py`, which packs open-loop `imagined_rollout.py` shards at fps 2
-with one action per frame. Closed-loop accepted rollouts have a different shape -- 8 imagined
+Closed-loop accepted rollouts have a different shape from open-loop shards -- 8 imagined
 frames 0.5 s apart plus 40 executed absolute targets at 0.1 s -- and must aggregate with the
 fps-10 real dataset, so they need a different layout.
 
