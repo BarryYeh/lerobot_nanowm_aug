@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # research/nanowm_aug
+from nwaug.attribution.config_io import seed_ns  # noqa: E402
 from nwaug_envs.pusht.coverage import coverage_from_frame  # noqa: E402
 
 
@@ -29,7 +30,7 @@ def main() -> None:
     ap.add_argument("--root", type=Path, required=True, help="dir holding sigma*/branches")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--thr", type=float, default=0.95)
-    ap.add_argument("--seed", type=int, default=960000)
+    ap.add_argument("--seed", type=int, default=seed_ns("heuristic_lastmile_select"))
     ap.add_argument("--min-accepted", type=int, default=100)
     ap.add_argument(
         "--force-min",

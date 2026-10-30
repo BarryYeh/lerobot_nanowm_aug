@@ -27,8 +27,10 @@ import pymunk
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # research/nanowm_aug
+from nwaug.attribution.config_io import COMMON, load_config, seed_ns  # noqa: E402
 from nwaug.attribution.policy_io import load_policy  # noqa: E402
 from nwaug.critic.sim_rollout import rollout_batch  # noqa: E402
+from nwaug.datagen.selection import qualifying  # noqa: E402
 from nwaug.eval.ood_failure_map import sim_state  # noqa: E402
 from nwaug.wm.make_topband_seeds import cog_to_body  # noqa: E402
 from nwaug_envs.pusht.coverage import coverage_from_frame  # noqa: E402
@@ -37,33 +39,14 @@ from nwaug_envs.pusht.state import save_seeds  # noqa: E402
 FI = 5
 
 
-def qualifying(steps, est, success_step, *, t_min, cov_lo, cov_hi, stall, per_episode, gap, rng) -> list[int]:
-    """Grid indices g (each >= 2) of one episode that qualify, at most per_episode, >= gap steps apart (random order)."""
-    end = success_step if success_step > 0 else 10**9
-    ok = [
-        g
-        for g in range(2, len(steps))
-        if steps[g] >= t_min and steps[g] < end and cov_lo <= est[g] < cov_hi and est[g] - est[g - 2] <= stall
-    ]
-    picked = []
-    for g in rng.permutation(ok) if ok else []:
-        if all(abs(int(steps[g]) - int(steps[p])) >= gap for p in picked):
-            picked.append(int(g))
-        if len(picked) >= per_episode:
-            break
-    return sorted(picked)
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument(
-        "--ckpt",
-        type=Path,
-        default=Path("outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model"),
+        "--ckpt", type=Path, default=Path(load_config(COMMON, out_dir_copy=False)["ckpt"]["base"])
     )
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--n", type=int, default=400)
-    ap.add_argument("--seed", type=int, default=940000)
+    ap.add_argument("--seed", type=int, default=seed_ns("heuristic_late_states"))
     ap.add_argument("--max-episodes", type=int, default=2000)
     ap.add_argument("--batch", type=int, default=50)
     ap.add_argument("--t-min", type=int, default=100)

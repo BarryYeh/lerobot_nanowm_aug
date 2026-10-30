@@ -100,4 +100,9 @@ All outputs go to `~/datastorage/nanowm_pusht_aug/lastmile/`.
 | `lastmile_simcheck.py`                     | Gate 2: simulator replay (diagnostic) |
 | `lastmile_pooled.py`                       | Pooled multi-seed comparison          |
 
+The seeds are registered in `configs/common.yaml` under `seed_namespace.heuristic_*`, and the scripts read them
+from there.
+The base checkpoint and the NanoWM settings come from the same file.
+
 The Method 1 experiment reuses the accepted states from this experiment (see `proj/pusht/method1/`).
+The Method 1 and imagined_replay drivers also call `lastmile_pooled.py` for their pooled comparisons.

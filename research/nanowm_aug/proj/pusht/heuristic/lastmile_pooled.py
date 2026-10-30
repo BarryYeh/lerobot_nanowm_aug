@@ -11,9 +11,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # research/nanowm_aug
+from nwaug.attribution.paired_report import boot_idx, pooled_diff  # noqa: E402
+
+NEAR = (
+    0.9 / 0.95
+)  # gym_pusht reward = clip(coverage / 0.95, 0, 1): max reward >= NEAR <=> max coverage >= 0.9
 
 
 def load(d: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -42,12 +50,11 @@ def main() -> None:
             S[arm, s], MR[arm, s] = load(a.eval_dir / f"{arm}_s{s}")
     n = len(S[a.arms[0], a.seeds[0]])
     assert all(len(v) == n for v in S.values()), {k: len(v) for k, v in S.items()}
-    rng = np.random.default_rng(0)
-    idx = rng.integers(0, n, size=(a.draws, n))
+    idx = boot_idx(n, a.draws)
     out = {"n_episodes": n, "seeds": a.seeds, "arms": {}, "pairs": {}}
     for arm in a.arms:
         rates = [float(S[arm, s].mean()) for s in a.seeds]
-        near = [int(((~S[arm, s]) & (MR[arm, s] >= 0.9 / 0.95)).sum()) for s in a.seeds]
+        near = [int(((~S[arm, s]) & (MR[arm, s] >= NEAR)).sum()) for s in a.seeds]
         out["arms"][arm] = {
             "per_seed": rates,
             "pooled": float(np.mean(rates)),
@@ -55,18 +62,8 @@ def main() -> None:
         }
     for p in a.pairs:
         x, y = p.split(":")
-        per = [float(S[x, s].mean() - S[y, s].mean()) for s in a.seeds]
-        dsum = sum((S[x, s].astype(float) - S[y, s].astype(float)) for s in a.seeds) / len(
-            a.seeds
-        )  # per episode
-        boot = dsum[idx].mean(1)
-        lo, hi = np.percentile(boot, [2.5, 97.5])
-        out["pairs"][p] = {
-            "per_seed": per,
-            "pooled": float(dsum.mean()),
-            "ci95": [float(lo), float(hi)],
-            "seeds_positive": int(sum(d > 0 for d in per)),
-        }
+        r = pooled_diff([S[x, s] for s in a.seeds], [S[y, s] for s in a.seeds], idx)
+        out["pairs"][p] = {**r, "seeds_positive": int(sum(d > 0 for d in r["per_seed"]))}
     first = a.pairs[0]
     pr = out["pairs"][first]
     if a.margin is None:

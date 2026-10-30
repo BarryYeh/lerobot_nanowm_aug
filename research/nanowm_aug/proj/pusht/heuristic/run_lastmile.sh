@@ -35,12 +35,14 @@ FINISHED=0
 trap '[ "$FINISHED" = 1 ] || status "FAIL driver exited unexpectedly (code $?); re-run to resume"' EXIT
 trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
 
-BASE_CKPT=outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model
+y() { uv run python $RES/nwaug/attribution/config_io.py $RES/configs/common.yaml "$1"; }
+BASE_CKPT=$(y ckpt.base)
 CTRL_CKPT=$HOME/datastorage/nanowm_pusht_aug/value_model/sailor_expand/finetune/train/pusht_imgonly_d8_s1000/checkpoints/020000/pretrained_model
 if [ -n "$SMOKE" ]; then N=6; K=1; MIN_ACC=0; MIN_GAP=-1; TARGET=12; else N=400; K=4; MIN_ACC=100; MIN_GAP=0.10; TARGET=1200; fi
 SIGMAS=(0.0 0.1 0.25)
-NSS=$(uv run python $RES/nwaug/attribution/config_io.py research/nanowm_aug/configs/common.yaml nanowm.num_sampling_steps)
-WMB=$(uv run python $RES/nwaug/attribution/config_io.py research/nanowm_aug/configs/common.yaml nanowm.wm_batch)
+NSS=$(y nanowm.num_sampling_steps)
+WMB=$(y nanowm.wm_batch)
+BRANCH_SEED=$(y seed_namespace.heuristic_lastmile_branch)  # torch seed; the noise seed is +3
 SUF=${SMOKE:+_smoke}
 
 st_collect() {
@@ -55,7 +57,7 @@ imagine_sigma() {  # <sigma> <gpu>
   rm -rf "$RUN/branches"; mkdir -p "$RUN/branches" || return 1
   CUDA_VISIBLE_DEVICES=$2 $PY $RES/nwaug/wm/closed_loop_rollout.py --ckpt "$BASE_CKPT" --seeds "$O/seeds_late.npz" \
     --n-seeds "$N" --k "$K" --h-max 2 --inject-sigma "$SIG" --accept-cov 0 --accept-mode terminal --save-latents \
-    --replan-every-rounds 2 --noise-hold 1 --max-z 3.0 --lead-na 10 --torch-seed 950000 --noise-seed 950003 \
+    --replan-every-rounds 2 --noise-hold 1 --max-z 3.0 --lead-na 10 --torch-seed "$BRANCH_SEED" --noise-seed $((BRANCH_SEED + 3)) \
     ${LEADARG[@]+"${LEADARG[@]}"} --num-sampling-steps "$NSS" --wm-batch "$WMB" \
     --work "$RUN/work" --out "$RUN/branches" || return 1
   have=$(find "$RUN/branches" -name 'seed*_cand*.npz' | wc -l)
@@ -88,16 +90,13 @@ st_pack() {
 }
 st_build() {
   $PY - "local/pusht_imgonly" "local/pusht_lastmile_W$SUF" "local/pusht_lastmile_R$SUF" <<'EOF'
-import json, sys
+import sys
 sys.path.insert(0, "research/nanowm_aug")
-from nwaug.attribution.build_selected_datasets import build_real_plus_pairs
-from lerobot.utils.constants import HF_LEROBOT_HOME
+from nwaug.attribution.build_selected_datasets import build_all_plus_real
 real, pools = sys.argv[1], sys.argv[2:]
-stats = json.loads((HF_LEROBOT_HOME / real / "meta/stats.json").read_text())
 n = {}
 for pool in pools:
-    n_pool = json.loads((HF_LEROBOT_HOME / pool / "meta/info.json").read_text())["total_episodes"]
-    n[pool] = (n_pool, build_real_plus_pairs(real, pool, list(range(n_pool)), f"{pool}_plus_real", stats))
+    n[pool] = build_all_plus_real(real, pool)  # (pool pairs, total episodes)
     print(pool, n[pool])
 assert len({v[0] for v in n.values()}) == 1, n
 EOF
