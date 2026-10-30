@@ -6,7 +6,8 @@ the episodes are the ones stock `lerobot-eval` ran) and records, per episode, th
 `is_success` was True. Takes the same CLI as lerobot-eval; `--output_dir` receives success_steps.npz:
 
   seed (N,), success (N,) bool, success_step (N,) int32 (env steps taken when success first fired; -1 = none),
-  ep_len (N,) int32 (env steps taken when the episode ended: success, or the 300-step limit)
+  ep_len (N,) int32 (env steps taken when the episode ended: success, or the 300-step limit),
+  cov09_step (N,) int32 (env steps taken when coverage first reached >= 0.9; -1 = never)
 
     uv run --extra training python research/nanowm_aug/nwaug/eval/eval_success_steps.py \
         --policy.path=<ckpt> --policy.device=cuda --policy.use_amp=false --policy.n_action_steps=10 \
@@ -36,7 +37,13 @@ def _rollout(*args, **kwargs):
     first_done = torch.where(
         done.any(1), done.int().argmax(1) + 1, torch.full((done.shape[0],), done.shape[1])
     )
-    _rows.append((first_succ.numpy().astype(np.int32), first_done.numpy().astype(np.int32)))
+    # first step with coverage >= 0.9 (reward = coverage / 0.95); never later than first_done, since success needs 0.95
+    hit = data["reward"] >= 0.9 / 0.95  # (B, T)
+    first_hit = hit.int().argmax(1) + 1
+    first_cov09 = torch.where(
+        hit.any(1) & (first_hit <= first_done), first_hit, torch.full_like(first_hit, -1)
+    )
+    _rows.append(tuple(t.numpy().astype(np.int32) for t in (first_succ, first_done, first_cov09)))
     return data
 
 
@@ -56,7 +63,13 @@ if __name__ == "__main__":
     le.main()
     ss = np.concatenate([r[0] for r in _rows])[:n]
     el = np.concatenate([r[1] for r in _rows])[:n]
+    c9 = np.concatenate([r[2] for r in _rows])[:n]
     np.savez(
-        out / "success_steps.npz", seed=start + np.arange(len(ss)), success=ss > 0, success_step=ss, ep_len=el
+        out / "success_steps.npz",
+        seed=start + np.arange(len(ss)),
+        success=ss > 0,
+        success_step=ss,
+        ep_len=el,
+        cov09_step=c9,
     )
     print(f"wrote {out / 'success_steps.npz'}: {len(ss)} episodes, {int((ss > 0).sum())} successes")
