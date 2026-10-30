@@ -16,6 +16,7 @@ Read the README first.
 | Heuristic  | [`proj/pusht/heuristic/`](proj/pusht/heuristic/README.md) | Does picking the chunk with the highest imagined coverage help at the last mile? |
 | Method 1   | [`proj/pusht/method1/`](proj/pusht/method1/README.md)     | Do imagined frames harm the policy?                                              |
 | Imagined replay | [`proj/pusht/imagined_replay/`](proj/pusht/imagined_replay/README.md) | With real successful actions as labels, can round-1 imagined frames replace the real frames? |
+| Early anchors | [`proj/pusht/early_anchors/`](proj/pusht/early_anchors/README.md) | Do rollouts that succeed in imagination from stalled mid-coverage states help a weaker base? |
 
 ## Layout
 

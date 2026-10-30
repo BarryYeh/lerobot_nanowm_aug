@@ -13,7 +13,7 @@ NANOWM_PY = REPO / "third_party" / "nano-world-model" / ".venv" / "bin" / "pytho
 # tests add them so scripts can import their same-folder siblings, as they do when run directly.
 EXPERIMENTS = [
     PROJ / "proj" / "pusht" / n
-    for n in ("sailor", "cupid", "heuristic", "method1", "imagined_replay")
+    for n in ("sailor", "cupid", "heuristic", "method1", "early_anchors", "imagined_replay")
 ]
 for p in (PROJ, *EXPERIMENTS):
     s = str(p)

@@ -1,0 +1,92 @@
+_comment: Shared base-policy results (written by proj/pusht/early_anchors/pick_base.py; do not hand-edit). Every success rate
+  uses the `eval` protocol below on the SAME episodes, so rows are comparable.
+generated: '2026-10-17'
+eval_protocol:
+  n_episodes: 1000
+  seed: 100000
+  n_action_steps: 10
+  batch_size: 50
+success_threshold: 0.95
+early_anchors_base:
+  picked_step: '040000'
+  ckpt: /home/feng-en.yeh/datastorage/nanowm_pusht_aug/early_anchors/base_s100000/checkpoints/040000/pretrained_model
+  pick_rule: success in [0.45, 0.55], closest to its midpoint
+  train:
+    recipe: outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model/train_config.json
+    steps: 100000
+    save_freq: 10000
+    seed: 100000
+    dataset: local/pusht_imgonly
+    output_dir: ~/datastorage/nanowm_pusht_aug/early_anchors/base_s100000
+    wandb: https://wandb.ai/barryyeh0916-technical-university-of-munich/early_anchors/runs/ggbasr8e
+  checkpoints:
+    '010000':
+      success_rate: 0.18
+      ci95:
+      - 0.1574
+      - 0.205
+      n_episodes: 1000
+      median_success_step: 215
+    '020000':
+      success_rate: 0.431
+      ci95:
+      - 0.4006
+      - 0.4619
+      n_episodes: 1000
+      median_success_step: 209
+    '030000':
+      success_rate: 0.455
+      ci95:
+      - 0.4244
+      - 0.486
+      n_episodes: 1000
+      median_success_step: 200
+    '040000':
+      success_rate: 0.534
+      ci95:
+      - 0.503
+      - 0.5647
+      n_episodes: 1000
+      median_success_step: 202
+    '050000':
+      success_rate: 0.567
+      ci95:
+      - 0.5361
+      - 0.5974
+      n_episodes: 1000
+      median_success_step: 193
+    '060000':
+      success_rate: 0.571
+      ci95:
+      - 0.5401
+      - 0.6013
+      n_episodes: 1000
+      median_success_step: 189
+    '070000':
+      success_rate: 0.596
+      ci95:
+      - 0.5653
+      - 0.626
+      n_episodes: 1000
+      median_success_step: 183
+    080000:
+      success_rate: 0.613
+      ci95:
+      - 0.5824
+      - 0.6427
+      n_episodes: 1000
+      median_success_step: 181
+    090000:
+      success_rate: 0.699
+      ci95:
+      - 0.6699
+      - 0.7266
+      n_episodes: 1000
+      median_success_step: 182
+    '100000':
+      success_rate: 0.676
+      ci95:
+      - 0.6464
+      - 0.7043
+      n_episodes: 1000
+      median_success_step: 188

@@ -159,3 +159,15 @@ seed_namespace:
   heuristic_lastmile_select: 960000  # heuristic select_lastmile.py: numpy rng of the random (R) pick
   imagined_replay_wm: 990000      # imagined_replay replay_imagine.py: NanoWM worker --seed 990000 + 1000*part + chunk (lastmile_w_imagine.py: 990000 + 2000, an unused part)
   imagined_replay_select: 995000  # imagined_replay pack_pairs.py: numpy rng of the per-start pair selection
+  early_anchors_define: 1050000   # early_anchors anchors.py source (step 1): old-base episodes the anchor rule is drawn on
+  early_anchors_source: 1000000   # early_anchors anchors.py source (step 3): new-base episodes the anchors are taken FROM
+  early_anchors_branch: 1010000   # early_anchors: policy torch seeds of the imagined closed-loop rollouts
+  early_anchors_wm: 1020000       # early_anchors: NanoWM worker seeds
+  early_anchors_select: 1030000   # early_anchors: numpy rng of the pair selection at pack time
+  early_anchors_heldout: 1040000  # early_anchors: held-out anchor episodes for the anchor-start eval
+  early_anchors_selcheck: 1060000 # early_anchors select_check.py: policy torch seeds of the sim continuations (Step 0)
+  early_anchors_wpick_branch: 1070000  # early_anchors wpick: policy torch seeds of the noised closed-loop rollouts (Step 1)
+  early_anchors_wpick_wm: 1080000      # early_anchors wpick: NanoWM worker seeds
+  early_anchors_wpick_noise: 1090000   # early_anchors wpick: numpy rng of the injected action noise (+ part)
+  early_anchors_wpick_select: 1100000  # early_anchors wpick: R draw and pair subsampling
+  early_anchors_wpick_sim: 1110000     # early_anchors wpick: policy torch seeds of the sim gate continuations

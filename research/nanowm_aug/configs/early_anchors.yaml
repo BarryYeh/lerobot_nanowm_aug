@@ -1,0 +1,76 @@
+# early_anchors: closed-loop NanoWM imagination from stalled mid-coverage states, Img vs Real fine-tune.
+# Plan + design notes: research/nanowm_aug/proj/pusht/early_anchors/README.md
+# Seed namespaces live in common.yaml (early_anchors_*); the copies below must equal them.
+extends: common.yaml
+
+out_dir: ~/datastorage/nanowm_pusht_aug/early_anchors   # never under repo outputs/
+
+wandb:
+  project: early_anchors
+
+# Overrides common.yaml's eval.n_action_steps (10) for this project only: base eval, pick_base and the source /
+# define episodes all execute 5 actions per policy query (== NanoWM's fi, so f=1 matches the eval protocol).
+eval:
+  n_action_steps: 5
+
+# ---- early anchor = a stalled mid-coverage state still far from termination ----
+# On the 5-step grid of the image coverage estimate (coverage_from_frame()["coverage_cal"]):
+#   cov_lo <= cov(t) < cov_hi  AND  t_min <= t <= t_max  AND  cov(t) - cov(t-10) <= stall  AND  episode not ended.
+# The FIRST qualifying grid point of each episode is its anchor (at most one per episode).
+anchor:
+  cov_lo: 0.5
+  cov_hi: 0.8
+  t_min: 15          # NanoWM needs 3 real context frames F(t-15), F(t-10), F(t-5)
+  t_max: 200         # leave room for the rollout to terminate
+  stall: 0.005       # "no progress": coverage gain over the last 10 steps (grid g-2 -> g)
+
+# ---- new base policy (step 2): old-base recipe from scratch, denser checkpoints ----
+base_train:
+  recipe: outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model/train_config.json
+  steps: 100000
+  save_freq: 10000
+  seed: 100000
+  output_dir: ~/datastorage/nanowm_pusht_aug/early_anchors/base_s100000   # off /home: two saves died there with ENOSPC
+  target_success: [0.45, 0.55]   # pick the checkpoint whose eval success lands in this band
+
+# ---- define (step 1) / source (step 3) episodes ----
+define:
+  ckpt_key: base                 # old base, only to settle the anchor rule
+  n: 100
+  seed: 1050000                  # == seed_namespace.early_anchors_define
+source:
+  n: 500                         # new base (base_policy_result.yaml) passed via --ckpt
+  seed: 1000000                  # == seed_namespace.early_anchors_source
+heldout:
+  seed: 1040000                  # == seed_namespace.early_anchors_heldout
+
+# ---- closed-loop imagination (step 4) ----
+rollout:
+  n_iter: null       # closed-loop iterations (policy queries) after the anchor; set after step 3's report
+  f: [1, 2]          # NanoWM rounds per policy query -> f * fi executed actions per query (f=1 == eval na 5)
+  k: 16              # branches per anchor
+  branch_seed: 1010000   # == seed_namespace.early_anchors_branch
+  wm_seed: 1020000       # == seed_namespace.early_anchors_wm
+
+filter:
+  success_cov: 0.9   # imagined image coverage; this project only. Eval keeps pusht.success_threshold (0.95)
+
+# ---- pack / fine-tune (steps 6-7); mixing is a design choice, `natural` is the ablation ----
+pack:
+  dose: 0.05         # synthetic pairs = 5% of the base train set's sampleable pairs
+  select_seed: 1030000   # == seed_namespace.early_anchors_select
+mix:
+  mode: balanced     # balanced: synthetic episodes repeated at pack time to ~synth_frac of each batch | natural
+  synth_frac: 0.5
+arms: [img, real]    # same action labels; img = imagined frames, real = the same actions replayed in sim
+finetune_seeds: [1000, 1001]
+
+# ---- select study: can NanoWM pick the better branch? (select_check.py = Step 0, wpick.py = Step 1) ----
+# Both replay branches in sim from the exact anchor state, then let the base policy continue to sim coverage
+# >= filter.success_cov or the 300-step cap.
+select_check:
+  seed: 1060000      # == seed_namespace.early_anchors_selcheck: policy torch seeds of the sim continuations
+  na: 10             # n_action_steps of the sim continuations (the fine-tune eval protocol)
+wpick:
+  select_seed: 1100000   # == seed_namespace.early_anchors_wpick_select: R draw (seed), pair subsampling (seed + 1)
+  sim_seed: 1110000      # == seed_namespace.early_anchors_wpick_sim: policy torch seeds of the sim gate
