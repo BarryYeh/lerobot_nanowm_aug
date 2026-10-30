@@ -69,6 +69,20 @@ def bootstrap_mean_ci(diff: np.ndarray, n_boot: int = 10000, seed: int = 0) -> t
     return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
 
 
+def boot_idx(n: int, draws: int = 10_000) -> np.ndarray:
+    """Paired-bootstrap index draws (rng 0); one set is applied to every arm and seed of a comparison."""
+    return np.random.default_rng(0).integers(0, n, size=(draws, n))
+
+
+def pooled_diff(xs: list[np.ndarray], ys: list[np.ndarray], idx: np.ndarray) -> dict:
+    """X - Y success rate over fine-tune seeds (xs[s], ys[s] = per-episode outcomes of seed s on the same episodes):
+    per seed, pooled (mean over seeds) and the 95% CI of the pooled difference (episode indices resampled by idx)."""
+    per = [float(x.mean() - y.mean()) for x, y in zip(xs, ys, strict=True)]
+    d = sum(x.astype(float) - y.astype(float) for x, y in zip(xs, ys, strict=True)) / len(xs)
+    lo, hi = np.percentile(d[idx].mean(1), [2.5, 97.5])
+    return {"per_seed": per, "pooled": float(d.mean()), "ci95": [float(lo), float(hi)]}
+
+
 def combined_mask(tags: list[str], art: dict[str, np.ndarray | None]) -> np.ndarray | None:
     """OR of every listed arm's own wall-artifact mask (None if none of them have one)."""
     masks = [art[t] for t in tags if art.get(t) is not None]

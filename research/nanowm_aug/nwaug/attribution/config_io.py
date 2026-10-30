@@ -15,6 +15,7 @@ from pathlib import Path
 import yaml
 
 EXPAND_KEYS = ("ckpt", "pool_index", "oracle_npz", "out_dir", "nanowm_python", "dataset_dir", "lerobot_home")
+COMMON = Path(__file__).resolve().parents[2] / "configs" / "common.yaml"
 
 
 def _merge(base: dict, over: dict) -> dict:
@@ -69,6 +70,11 @@ def load_config(path: str | Path, out_dir_copy: bool = True) -> dict:
         with (out / "config_provenance.jsonl").open("a") as f:
             f.write(json.dumps(entry) + "\n")
     return cfg
+
+
+def seed_ns(name: str) -> int:
+    """configs/common.yaml seed_namespace.<name>, the one registry of seed blocks."""
+    return int(load_config(COMMON, out_dir_copy=False)["seed_namespace"][name])
 
 
 def main() -> None:

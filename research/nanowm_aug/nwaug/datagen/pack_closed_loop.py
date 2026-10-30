@@ -105,6 +105,30 @@ def to96(f224: np.ndarray) -> np.ndarray:
     return t[0].permute(1, 2, 0).round().clamp(0, 255).byte().numpy()
 
 
+def create_pair_repo(
+    repo_id: str, overwrite: bool, fps: int = 10, root: Path | None = None
+) -> LeRobotDataset:
+    """Empty pair dataset at root (default $HF_LEROBOT_HOME/<repo_id>); an existing one is replaced only with
+    overwrite."""
+    root = root or HF_LEROBOT_HOME / repo_id
+    if root.exists():
+        if not overwrite:
+            raise SystemExit(f"{root} exists; pass --overwrite")
+        shutil.rmtree(root)
+    return LeRobotDataset.create(
+        repo_id=repo_id, fps=fps, features=FEATURES, root=root, robot_type="pusht_sim", use_videos=True
+    )
+
+
+def add_pair(ds: LeRobotDataset, frame96: np.ndarray, acts: np.ndarray) -> None:
+    """One pair episode: row u = (frame96, acts[u] clipped to the real action range). Only row 0's image is read as
+    an observation (n_obs_steps 1, drop_n_last_frames len(acts) - 1); the other rows carry the action horizon."""
+    chunk = np.clip(acts, ACTION_LO, ACTION_HI).astype(np.float32)
+    for u in range(len(chunk)):
+        ds.add_frame({"observation.image": frame96, "action": chunk[u], "task": "pusht"})
+    ds.save_episode()
+
+
 def verify_existing_pack(root: Path, repo_id: str, pairs: list[dict], accepted: Path, fi: int) -> None:
     """Fail unless every episode of the pack at `root` starts with the actions `pairs` says it
     should. Only row 0 is checked: it is never padded and pins down (branch, j) uniquely."""
@@ -278,18 +302,7 @@ def main() -> None:
             raise SystemExit(f"--index-only needs an existing pack at {root}")
         ds = None
     else:
-        if root.exists():
-            if not args.overwrite:
-                raise SystemExit(f"{root} exists; pass --overwrite")
-            shutil.rmtree(root)
-        ds = LeRobotDataset.create(
-            repo_id=args.repo_id,
-            fps=args.fps,
-            features=FEATURES,
-            root=root,
-            robot_type="pusht_sim",
-            use_videos=True,
-        )
+        ds = create_pair_repo(args.repo_id, args.overwrite, fps=args.fps, root=root)
 
     H, fi = args.horizon, args.fi
     n_ep = n_clip = n_skip = 0

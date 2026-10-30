@@ -75,6 +75,15 @@ def build_real_plus_pairs(
     return json.loads((HF_LEROBOT_HOME / repo_id / "meta/info.json").read_text())["total_episodes"]
 
 
+def build_all_plus_real(real_repo: str, pool: str, repo_id: str | None = None) -> tuple[int, int]:
+    """`repo_id` (default <pool>_plus_real) = real + EVERY pool episode, stats pinned to the real data.
+    Returns (pool episodes, total episodes)."""
+    stats = json.loads((HF_LEROBOT_HOME / real_repo / "meta/stats.json").read_text())
+    n_pool = json.loads((HF_LEROBOT_HOME / pool / "meta/info.json").read_text())["total_episodes"]
+    n = build_real_plus_pairs(real_repo, pool, list(range(n_pool)), repo_id or f"{pool}_plus_real", stats)
+    return n_pool, n
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--config", type=Path, required=True)
