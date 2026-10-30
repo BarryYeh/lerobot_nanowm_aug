@@ -19,8 +19,14 @@ the transition STARTING AT FRAME j, so round r's window must span stream steps
 [r*fi, r*fi + nf*fi), where the stream is indexed from the FIRST context frame.
 
   stream[0 .. (H-1)*fi)          real gym lead-in actions (policy rolled from the seed state)
-  round r window                 stream[r*fi : r*fi+10]  ++  chunk[0:10]   (10 executed + 10 lookahead)
-  after round r                  append chunk[0:fi] to the stream; advance the PD agent fi steps
+  round r window                 stream[r*fi : r*fi+10]  ++  chunk[off : off+10]   (off = (r % R) * fi)
+  after round r                  append chunk[off : off+fi] to the stream; advance the PD agent fi steps
+
+Only the first (nf-1)*fi = 15 window steps reach the model: NanoWM shifts the action groups by one
+(frame j is conditioned on group j-1) and DROPS the last group (`nanowm.py`, `action_emb_all[:, :-1]`).
+So the generated frame sees the 10 executed context actions plus chunk[off : off+fi], the slice this
+round executes; chunk[off+fi : off+10] is ignored and there is no real lookahead. `window_segment`
+pads that ignored tail when the chunk ends early.
 
 Per round each branch re-plans on its own imagined frame, so this is a true closed loop.
 Strict-terminal accept: imagined coverage[last] >= --accept-cov.
@@ -100,7 +106,7 @@ def sample_chunks(policy, pre, post, frames96: np.ndarray, k: int, dev: str) -> 
     """(M,96,96,3) u8 -> (M*k, horizon, 2) absolute-target chunks, k independent per frame.
 
     Goes through `diffusion.conditional_sample` directly: the public `generate_actions` slices
-    to n_action_steps, and the window lookahead needs the full horizon. (Same call as
+    to n_action_steps, and with R > 1 later rounds execute past n_action_steps. (Same call as
     the original closed-loop script, which was validated end-to-end.)
     """
     img = torch.from_numpy(frames96).float().permute(0, 3, 1, 2).div(255.0).to(dev)
@@ -146,12 +152,22 @@ def chunk_slices(r: int, every: int, fi: int, need: int, past_len: int) -> tuple
     Returns `(sample_now, off, look, ex)`:
       sample_now  a new chunk is sampled (and noised) this round iff `r % R == 0`;
       off         offset of this round's executed steps inside the current chunk, `(r % R) * fi`;
-      look        slice of the chunk used as lookahead in the NanoWM window, `[off, off+need-past_len)`;
+      look        slice of the chunk that fills the rest of the NanoWM window, `[off, off+need-past_len)`;
+                  only its first fi steps (== `ex`) reach the model, see the ALIGNMENT CONTRACT;
       ex          slice of the chunk executed this round, `[off, off+fi)`.
     R=1 gives `off=0`, `look=[0, need-past_len)`, `ex=[0, fi)` for every r -- the original code."""
     assert every >= 1 and r >= 0, (r, every)
     off = (r % every) * fi
     return r % every == 0, off, slice(off, off + need - past_len), slice(off, off + fi)
+
+
+def window_segment(past: np.ndarray, chunk: np.ndarray, look: slice, need: int, fi: int) -> np.ndarray:
+    """`past ++ chunk[look]`, `need` steps long. NanoWM drops the window's last fi steps (its action
+    shift), so the chunk only has to reach the end of the executed slice; a shorter `chunk[look]` is
+    padded by repeating its last action, which the model never sees."""
+    seg = np.concatenate([past, chunk[look]], 0)[:need]
+    assert len(seg) >= need - fi, (len(seg), need, fi)
+    return np.concatenate([seg, np.repeat(seg[-1:], need - len(seg), 0)], 0)
 
 
 def validate_cadence(h_max: int, every: int) -> None:
@@ -297,8 +313,8 @@ def main() -> None:
         type=int,
         default=1,
         help="sample (and noise) a new chunk every R rounds, execute it in fi-step slices (default 1 = "
-        "every round, the original behaviour). Must divide --h-max; R>1 needs policy horizon >= "
-        "(R-1)*fi + need - (H-1)*fi (asserted)",
+        "every round, the original behaviour). Must divide --h-max; needs policy horizon >= R*fi "
+        "(asserted)",
     )
     p.add_argument(
         "--torch-seed",
@@ -484,16 +500,15 @@ def main() -> None:
                         cur_chunks, pos, vel, args.inject_sigma, args.max_z, args.noise_hold, noise_rng
                     )
             horizon = cur_chunks.shape[1]
-            assert horizon >= look_sl.stop, (
-                f"policy horizon {horizon} < {look_sl.stop} needed by round {r} (replan_every_rounds={R})"
+            assert horizon >= ex_sl.stop, (
+                f"policy horizon {horizon} < {ex_sl.stop} needed by round {r} (replan_every_rounds={R})"
             )
             wins = np.zeros((bs, nf, fi * 2), np.float32)
             for b in range(bs):
                 k0 = r * fi
                 past = stream[b, k0 : k0 + (H - 1) * fi + fi]  # executed part, 10 entries
                 assert len(past) == (H - 1) * fi, (len(past), (H - 1) * fi)
-                look = cur_chunks[b, look_sl]  # lookahead from the chunk
-                seg = np.concatenate([past, look], 0)[:need]
+                seg = window_segment(past, cur_chunks[b], look_sl, need, fi)
                 # exact rel: targets minus the agent trajectory, bootstrapped from the agent
                 # state recorded at stream index k0
                 rel, _, _ = ac.abs_targets_to_rel(seg, apos[b, k0], avel[b, k0])

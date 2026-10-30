@@ -7,7 +7,7 @@ import pytest
 
 pytest.importorskip("gym_pusht")
 
-from nwaug.wm.closed_loop_rollout import chunk_slices, validate_cadence  # noqa: E402
+from nwaug.wm.closed_loop_rollout import chunk_slices, validate_cadence, window_segment  # noqa: E402
 
 FI, NEED, PAST, H_MAX = 5, 20, 10, 8
 
@@ -30,7 +30,7 @@ def test_r2_samples_on_even_rounds_only_and_offsets_odd_rounds():
         assert off == (0 if r % 2 == 0 else 5)
         assert look == slice(off, off + 10)
         assert ex == slice(off, off + 5)
-    assert chunk_slices(1, 2, FI, NEED, PAST)[2] == slice(5, 15)  # needs horizon >= 15 (ckpt has 16)
+    assert chunk_slices(1, 2, FI, NEED, PAST)[2] == slice(5, 15)  # only [5, 10) reaches NanoWM
 
 
 @pytest.mark.parametrize("every", [1, 2, 4])
@@ -45,6 +45,25 @@ def test_executed_slices_tile_the_stream_without_gap_or_overlap(every):
     if every == 2:
         a, b = chunk_slices(0, 2, FI, NEED, PAST)[3], chunk_slices(1, 2, FI, NEED, PAST)[3]
         assert (a.start, a.stop, b.start, b.stop) == (0, 5, 5, 10)
+
+
+def test_window_segment_is_unchanged_when_the_chunk_is_long_enough():
+    past, chunk = np.arange(PAST * 2.0).reshape(PAST, 2), 100 + np.arange(32.0).reshape(16, 2)
+    for r in range(4):
+        look = chunk_slices(r, 2, FI, NEED, PAST)[2]
+        seg = window_segment(past, chunk, look, NEED, FI)
+        assert np.array_equal(seg, np.concatenate([past, chunk[look]], 0)[:NEED])
+
+
+def test_window_segment_pads_only_the_dropped_group():
+    past, chunk = np.zeros((PAST, 2)), 1 + np.arange(30.0).reshape(15, 2)
+    look = chunk_slices(2, 3, FI, NEED, PAST)[2]  # R=3, off=10: chunk[10:20], horizon 15
+    seg = window_segment(past, chunk, look, NEED, FI)
+    assert seg.shape == (NEED, 2)
+    assert np.array_equal(seg[PAST : NEED - FI], chunk[10:15])  # the executed slice is intact
+    assert (seg[NEED - FI :] == chunk[14]).all()  # padding sits in the group NanoWM drops
+    with pytest.raises(AssertionError):  # the executed slice itself must exist
+        window_segment(past, chunk[:12], look, NEED, FI)
 
 
 def test_h_max_must_be_a_multiple_of_r():
