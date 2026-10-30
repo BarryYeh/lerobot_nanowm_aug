@@ -7,6 +7,7 @@
 extends: common.yaml
 
 out_dir: outputs/cupid/untrimmed464
+wandb: {project: lerobot_nanowm_cupid_filter}   # entity / mode / enable come from common.yaml; fine-tune logging only
 
 # ---- the model being attributed (theta) and the data it was trained on ----
 # == ckpt.finetuned_untrimmed464 / datasets.train_untrimmed464 in the common config

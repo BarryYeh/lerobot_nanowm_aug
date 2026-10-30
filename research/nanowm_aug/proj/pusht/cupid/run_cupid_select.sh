@@ -119,7 +119,9 @@ PY
     build) $PY $RES/nwaug/attribution/build_selected_datasets.py --config "$CFG" ;;
     finetune)
       for repo in $(arms); do
-        SAVE_FREQ=$(y finetune.save_freq) bash $RES/proj/pusht/scripts/finetune_cl.sh "repo=$repo" "$SEED" "$STEPS" "$DROP"
+        SAVE_FREQ=$(y finetune.save_freq) WANDB_ENTITY=$(y wandb.entity) WANDB_PROJECT=$(y wandb.project) \
+          WANDB_MODE=$(y wandb.mode) WANDB_ENABLE=${WANDB_ENABLE:-$(y wandb.enable | tr '[:upper:]' '[:lower:]')} \
+          bash $RES/proj/pusht/scripts/finetune_cl.sh "repo=$repo" "$SEED" "$STEPS" "$DROP"
       done
       ;;
     eval)

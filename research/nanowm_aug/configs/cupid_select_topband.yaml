@@ -7,6 +7,7 @@
 extends: common.yaml
 
 out_dir: outputs/cupid/select_topband
+wandb: {project: lerobot_nanowm_cupid_select}   # entity / mode / enable come from common.yaml; fine-tune logging only
 
 # ---- theta and the data it was trained on (real only) ----
 ckpt: outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model   # == ckpt.base
