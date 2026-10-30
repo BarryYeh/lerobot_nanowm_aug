@@ -18,7 +18,7 @@ SEED="${2:-1000}"
 STEPS="${3:-20000}"
 DROP="${4:?usage: finetune_cl.sh <arm|repo=local/<id>> <seed> <steps> <drop>  (drop = pack --ep-len minus 1)}"
 [[ "$DROP" =~ ^[0-9]+$ ]] || { echo "drop must be a non-negative integer"; exit 1; }
-CKPT=outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model
+CKPT="${BASE_CKPT:-outputs/train/pusht_imgonly/obs1_s100000/checkpoints/last/pretrained_model}"  # BASE_CKPT (env): fine-tune another base
 case "$ARM" in
   a) REPO_ID=local/pusht_imgonly;         TAG=a_real_only ;;
   b) REPO_ID=local/pusht_imgonly_plus_cl9; TAG=b_real_plus_aug ;;
@@ -45,6 +45,10 @@ ROOT="${HF_LEROBOT_HOME:-${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}
 OUT="${OUT_ROOT:-outputs/train/cl_aug}/${TAG}_d${DROP}_s${SEED}"   # OUT_ROOT (env): keep outputs off the repo
 mkdir -p research/nanowm_aug/logs
 echo "arm=$ARM dataset=$REPO_ID seed=$SEED steps=$STEPS -> $OUT"
+# W&B account/project (env, set from the experiment yaml by run_cupid_*.sh): WANDB_ENTITY, WANDB_PROJECT, WANDB_MODE, WANDB_ENABLE.
+# Unset/empty/None entity -> the account `wandb login` is signed in as.
+WANDB_ENTITY_ARG=()
+case "${WANDB_ENTITY:-}" in ""|None|null) ;; *) WANDB_ENTITY_ARG=(--wandb.entity="$WANDB_ENTITY") ;; esac
 uv run --extra training lerobot-train \
   --policy.path="$CKPT" \
   --dataset.repo_id="$REPO_ID" \
@@ -55,8 +59,9 @@ uv run --extra training lerobot-train \
   --policy.push_to_hub=false \
   --policy.optimizer_lr=1e-5 \
   --wandb.enable="${WANDB_ENABLE:-true}" \
-  --wandb.mode=online \
-  --wandb.project=nanowm_cl_aug \
+  --wandb.mode="${WANDB_MODE:-online}" \
+  --wandb.project="${WANDB_PROJECT:-nanowm_cl_aug}" \
+  "${WANDB_ENTITY_ARG[@]}" \
   --batch_size=64 \
   --num_workers=4 \
   --steps="$STEPS" \
