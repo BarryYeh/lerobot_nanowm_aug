@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 720" width="900" height="720" font-family="system-ui, -apple-system, 'Noto Sans TC', 'PingFang TC', sans-serif" font-size="13">
+  <style>
+    text { fill: #1f2328; }
+    .muted { fill: #6e7781; }
+    .h { font-size: 16px; font-weight: 600; }
+    .s { font-size: 11.5px; }
+  </style>
+  <rect width="900" height="720" fill="#ffffff"/>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f2328"/>
+    </marker>
+  </defs>
+
+  <!-- ============ Panel A: near-miss 定義與收錄範圍 ============ -->
+  <text x="20" y="28" class="h">A. 定義 near-miss，並從 Terminal 往回決定收錄範圍（例：T = 208、t_nm = 200）</text>
+
+  <!-- near-miss band 0.85–0.945 : y 220..125 -->
+  <rect x="90" y="125" width="770" height="95" fill="#fff1c2"/>
+  <text x="96" y="140" class="s muted">near-miss 帶：coverage ∈ [0.85, 0.945)，且 t ≥ 100</text>
+  <!-- success threshold 0.95 : y 120 -->
+  <line x1="90" y1="120" x2="860" y2="120" stroke="#cf222e" stroke-dasharray="5 4"/>
+  <text x="858" y="114" text-anchor="end" class="s" style="fill:#cf222e">成功門檻 0.95</text>
+
+  <!-- axes -->
+  <line x1="90" y1="270" x2="860" y2="270" stroke="#d0d7de"/>
+  <line x1="90" y1="70" x2="90" y2="270" stroke="#d0d7de"/>
+  <text x="84" y="274" text-anchor="end" class="s muted">0.80</text>
+  <text x="84" y="224" text-anchor="end" class="s muted">0.85</text>
+  <text x="84" y="129" text-anchor="end" class="s muted">0.945</text>
+  <text x="84" y="74" text-anchor="end" class="s muted">1.00</text>
+  <text x="30" y="175" class="s muted" transform="rotate(-90 30 175)" text-anchor="middle">coverage（畫面估計）</text>
+
+  <!-- context-only range 183..198 and kept range 199..203 (x = 90 + (t-170)*18.33) -->
+  <rect x="328" y="292" width="275" height="16" fill="#ddf4ff"/>
+  <text x="465" y="304" text-anchor="middle" class="s" style="fill:#0969da">t_start−15 … t_start：只當 context</text>
+  <rect x="612.5" y="292" width="91.7" height="16" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="658" y="324" text-anchor="middle" class="s" style="fill:#1a7f37">收錄 s = 199 … 203</text>
+  <text x="658" y="338" text-anchor="middle" class="s" style="fill:#1a7f37">（t_start+1 … T−5）</text>
+
+  <!-- coverage curve -->
+  <path d="M90,250 L181.7,210 L273.3,180 L365,165 L456.7,160 L548.3,158 L640,157 L695,145 L750,130 L786.7,118"
+        fill="none" stroke="#1f2328" stroke-width="2"/>
+  <text x="400" y="190" class="s muted">停滯：10 step 內上升 ≤ 0.005</text>
+
+  <!-- t_nm = 200 -->
+  <line x1="640" y1="70" x2="640" y2="270" stroke="#1f2328" stroke-dasharray="3 3"/>
+  <circle cx="640" cy="157" r="4.5" fill="#1f2328"/>
+  <text x="634" y="250" text-anchor="end" class="s">t_nm = 200</text>
+  <text x="634" y="264" text-anchor="end" class="s muted">near-miss 起點</text>
+  <!-- T = 208 -->
+  <line x1="786.7" y1="70" x2="786.7" y2="270" stroke="#1a7f37" stroke-dasharray="3 3"/>
+  <circle cx="786.7" cy="118" r="4.5" fill="#1a7f37"/>
+  <text x="792" y="250" class="s" style="fill:#1a7f37">T = 208</text>
+  <text x="792" y="264" class="s muted">成功</text>
+  <!-- t_start = 198 -->
+  <line x1="603.3" y1="70" x2="603.3" y2="270" stroke="#0969da"/>
+  <text x="598" y="114" text-anchor="end" class="s" style="fill:#0969da">t_start = 198</text>
+
+  <!-- back-stepping arrows 208 -> 203 -> 198 -->
+  <path d="M786.7,88 Q741,62 695,88" fill="none" stroke="#1f2328" marker-end="url(#arr)"/>
+  <path d="M695,88 Q649,62 603.3,88" fill="none" stroke="#1f2328" marker-end="url(#arr)"/>
+  <text x="741" y="98" text-anchor="middle" class="s">−5</text>
+  <text x="649" y="98" text-anchor="middle" class="s">−5</text>
+  <text x="440" y="60" class="s">從 T 每 5 step 往回，直到第一次 ≤ t_nm：208 → 203 → 198</text>
+
+  <!-- x ticks -->
+  <g class="s muted" text-anchor="middle">
+    <text x="181.7" y="284">175</text><text x="365" y="284">185</text><text x="548.3" y="284">195</text><text x="731.7" y="284">205</text>
+  </g>
+
+  <!-- ============ Panel B: 滑動視窗生成 F̂(s) ============ -->
+  <line x1="20" y1="355" x2="880" y2="355" stroke="#d0d7de"/>
+  <text x="20" y="383" class="h">B. 逐 sim step 生成 F̂(s)：3 張真實 context（間隔 5）+ 20 step 錄下的動作 → NanoWM 1 round</text>
+
+  <!-- timeline: x = 90 + (t-183)*29.6 -->
+  <line x1="90" y1="408" x2="860" y2="408" stroke="#d0d7de"/>
+  <g stroke="#d0d7de">
+    <line x1="119.6" y1="404" x2="119.6" y2="412"/><line x1="267.6" y1="404" x2="267.6" y2="412"/>
+    <line x1="415.6" y1="404" x2="415.6" y2="412"/><line x1="563.6" y1="404" x2="563.6" y2="412"/>
+    <line x1="682" y1="404" x2="682" y2="412"/><line x1="830" y1="404" x2="830" y2="412"/>
+  </g>
+  <text x="682" y="402" text-anchor="middle" class="s">T−5 = 203</text>
+  <text x="830" y="402" text-anchor="middle" class="s" style="fill:#1a7f37">T = 208</text>
+  <text x="90" y="402" class="s muted">sim step →</text>
+
+  <!-- Row 1: s = 199 -->
+  <text x="20" y="440" class="s" font-weight="600">s = 199</text>
+  <text x="20" y="455" class="s muted">第一張</text>
+  <g>
+    <rect x="108.6" y="428" width="22" height="22" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <rect x="256.6" y="428" width="22" height="22" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <rect x="404.6" y="428" width="22" height="22" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <text x="119.6" y="464" text-anchor="middle" class="s" style="fill:#0969da">F(184)</text>
+    <text x="267.6" y="464" text-anchor="middle" class="s" style="fill:#0969da">F(189)</text>
+    <text x="415.6" y="464" text-anchor="middle" class="s" style="fill:#0969da">F(194)</text>
+    <rect x="552.6" y="428" width="22" height="22" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.5"/>
+    <text x="580" y="444" class="s" style="fill:#bc4c00">F̂(199)　↔ 對應真實 F(199)</text>
+  </g>
+  <!-- action window 184..204 -->
+  <rect x="119.6" y="474" width="148" height="14" fill="#8c959f"/>
+  <rect x="267.6" y="474" width="148" height="14" fill="#8c959f" opacity="0.75"/>
+  <rect x="415.6" y="474" width="148" height="14" fill="#0969da"/>
+  <rect x="563.6" y="474" width="148" height="14" fill="#d0d7de" stroke="#6e7781" stroke-dasharray="4 3"/>
+  <g class="s" text-anchor="middle">
+    <text x="193.6" y="503">組 0：F(184)→F(189)</text>
+    <text x="341.6" y="503">組 1：F(189)→F(194)</text>
+    <text x="489.6" y="503" style="fill:#0969da">組 2：決定 F̂(199)</text>
+    <text x="637.6" y="503" class="muted">組 3：lookahead</text>
+  </g>
+  <text x="719" y="485" class="s muted">a[184 : 204]</text>
+
+  <!-- slide note -->
+  <text x="450" y="530" text-anchor="middle" class="s muted">⋮　整個視窗每次往右滑 1 sim step：s = 200, 201, 202 …　⋮</text>
+
+  <!-- Row 2: s = 203 (last) -->
+  <text x="20" y="562" class="s" font-weight="600">s = 203</text>
+  <text x="20" y="577" class="s muted">最後一張</text>
+  <g>
+    <rect x="227" y="550" width="22" height="22" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <rect x="375" y="550" width="22" height="22" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <rect x="523" y="550" width="22" height="22" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <text x="238" y="586" text-anchor="middle" class="s" style="fill:#0969da">F(188)</text>
+    <text x="386" y="586" text-anchor="middle" class="s" style="fill:#0969da">F(193)</text>
+    <text x="534" y="586" text-anchor="middle" class="s" style="fill:#0969da">F(198)</text>
+    <rect x="671" y="550" width="22" height="22" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.5"/>
+    <text x="700" y="566" class="s" style="fill:#bc4c00">F̂(203)</text>
+  </g>
+  <!-- action window 188..208 -->
+  <rect x="238" y="596" width="148" height="14" fill="#8c959f"/>
+  <rect x="386" y="596" width="148" height="14" fill="#8c959f" opacity="0.75"/>
+  <rect x="534" y="596" width="148" height="14" fill="#0969da"/>
+  <rect x="682" y="596" width="148" height="14" fill="#d0d7de" stroke="#6e7781" stroke-dasharray="4 3"/>
+  <line x1="830" y1="590" x2="830" y2="616" stroke="#1a7f37" stroke-width="2"/>
+  <text x="756" y="628" text-anchor="middle" class="s muted">組 3 剛好用到 a[207]</text>
+  <text x="838" y="607" class="s" style="fill:#1a7f37">T</text>
+  <text x="90" y="628" class="s muted">a[188 : 208]</text>
+
+  <!-- notes -->
+  <line x1="20" y1="645" x2="880" y2="645" stroke="#d0d7de"/>
+  <text x="20" y="667" class="s">• s &gt; T−5 時，組 3 需要 T 之後的動作；rollout 在 T 已結束，所以這些 s 不收錄。</text>
+  <text x="20" y="686" class="s">• context 永遠是真實 frame，誤差不會累積。Real 組用 F(s)、Imagined 組用 F̂(s)，label 都是錄下的 a[s : s+16]。</text>
+  <text x="20" y="705" class="s">• Fidelity filter：|coverage(F̂(T−5)) − coverage(F(T−5))| ≤ 門檻；沒通過的軌跡兩組都丟掉。</text>
+</svg>

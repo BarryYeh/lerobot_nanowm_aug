@@ -11,7 +11,10 @@ NANOWM_PY = REPO / "third_party" / "nano-world-model" / ".venv" / "bin" / "pytho
 
 # One import root (PROJ) for `nwaug` / `nwaug_envs`. The experiment folders are not packages:
 # tests add them so scripts can import their same-folder siblings, as they do when run directly.
-EXPERIMENTS = [PROJ / "proj" / "pusht" / n for n in ("sailor", "cupid", "heuristic", "method1")]
+EXPERIMENTS = [
+    PROJ / "proj" / "pusht" / n
+    for n in ("sailor", "cupid", "heuristic", "method1", "imagined_replay")
+]
 for p in (PROJ, *EXPERIMENTS):
     s = str(p)
     if s not in sys.path:

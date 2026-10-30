@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 800" width="900" height="800" font-family="system-ui, -apple-system, 'Noto Sans TC', 'PingFang TC', sans-serif" font-size="13">
+  <style>
+    text { fill: #1f2328; }
+    .muted { fill: #6e7781; }
+    .h { font-size: 16px; font-weight: 600; }
+    .s { font-size: 11.5px; }
+    .b { font-weight: 600; }
+  </style>
+  <rect width="900" height="800" fill="#ffffff"/>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f2328"/>
+    </marker>
+  </defs>
+
+  <!-- ================= A: how the W pair was made ================= -->
+  <text x="20" y="28" class="h">A. last-mile 的 W pair 原本怎麼來的</text>
+  <g>
+    <rect x="20" y="45" width="150" height="62" rx="6" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="95" y="68" text-anchor="middle" class="s b">來源 episode</text>
+    <text x="95" y="85" text-anchor="middle" class="s">在 t 卡住</text>
+    <text x="95" y="100" text-anchor="middle" class="s muted">存下 t−10 的狀態</text>
+
+    <rect x="200" y="45" width="150" height="62" rx="6" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="275" y="68" text-anchor="middle" class="s b">放置（place_body）</text>
+    <text x="275" y="85" text-anchor="middle" class="s">lead-in 第 0 步</text>
+    <text x="275" y="100" text-anchor="middle" class="s muted">agent、方塊速度 = 0</text>
+
+    <rect x="380" y="45" width="150" height="62" rx="6" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="455" y="68" text-anchor="middle" class="s b">policy lead-in 10 步</text>
+    <text x="455" y="85" text-anchor="middle" class="s">錄下 lead[0:10]</text>
+    <text x="455" y="100" text-anchor="middle" class="s muted">畫面 F(0)、F(5)、F(10)</text>
+
+    <rect x="560" y="45" width="150" height="62" rx="6" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="635" y="68" text-anchor="middle" class="s b">anchor = 第 10 步</text>
+    <text x="635" y="85" text-anchor="middle" class="s">12 個候選 chunk</text>
+    <text x="635" y="100" text-anchor="middle" class="s muted">NanoWM 選出 W</text>
+
+    <rect x="740" y="45" width="140" height="62" rx="6" fill="#dafbe1" stroke="#1a7f37"/>
+    <text x="810" y="68" text-anchor="middle" class="s b" style="fill:#1a7f37">Real-W pair</text>
+    <text x="810" y="85" text-anchor="middle" class="s">真實 F(10)</text>
+    <text x="810" y="100" text-anchor="middle" class="s">+ W chunk</text>
+    <g stroke="#1f2328" fill="none">
+      <line x1="170" y1="76" x2="198" y2="76" marker-end="url(#arr)"/>
+      <line x1="350" y1="76" x2="378" y2="76" marker-end="url(#arr)"/>
+      <line x1="530" y1="76" x2="558" y2="76" marker-end="url(#arr)"/>
+      <line x1="710" y1="76" x2="738" y2="76" marker-end="url(#arr)"/>
+    </g>
+  </g>
+  <text x="20" y="132" class="s muted">問題：放置之前沒有任何歷史，所以 F(−5) 不存在；但 NanoWM 預測 F̂(10) 需要 F(−5)、F(0)、F(5) 三張 context。</text>
+
+  <!-- ================= B: replay with 5 hold steps ================= -->
+  <line x1="20" y1="148" x2="880" y2="148" stroke="#d0d7de"/>
+  <text x="20" y="176" class="h">B. 在模擬器重播：先原地不動 5 步，再重播錄下的 lead-in 與 W chunk</text>
+
+  <!-- timeline: x = 120 + (t+5)*36 -->
+  <line x1="120" y1="215" x2="840" y2="215" stroke="#8c959f"/>
+  <g class="s muted" text-anchor="middle">
+    <text x="120" y="207">t = −5</text><text x="300" y="207">0（放置）</text><text x="480" y="207">5</text>
+    <text x="660" y="207" style="fill:#1f2328" class="b">10（anchor）</text><text x="840" y="207">15</text>
+  </g>
+  <g stroke="#8c959f"><line x1="120" y1="211" x2="120" y2="219"/><line x1="300" y1="211" x2="300" y2="219"/><line x1="480" y1="211" x2="480" y2="219"/><line x1="660" y1="211" x2="660" y2="219"/><line x1="840" y1="211" x2="840" y2="219"/></g>
+
+  <!-- action rows -->
+  <text x="20" y="246" class="s b">執行的動作</text>
+  <rect x="120" y="234" width="180" height="20" fill="#eaeef2" stroke="#8c959f" stroke-dasharray="4 3"/>
+  <text x="210" y="248" text-anchor="middle" class="s">原地 ×5（目標 = 自己位置）</text>
+  <rect x="300" y="234" width="360" height="20" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="480" y="248" text-anchor="middle" class="s" style="fill:#0969da">錄下的 lead[0:10]（逐一重播）</text>
+  <rect x="660" y="234" width="180" height="20" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="750" y="248" text-anchor="middle" class="s" style="fill:#1a7f37">W chunk[0:5]</text>
+
+  <!-- state row -->
+  <text x="20" y="280" class="s b">模擬器狀態</text>
+  <rect x="120" y="268" width="180" height="20" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="210" y="282" text-anchor="middle" class="s">完全靜止（= 放置狀態）</text>
+  <rect x="300" y="268" width="360" height="20" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="480" y="282" text-anchor="middle" class="s">和原本 lead-in 一模一樣</text>
+  <rect x="660" y="268" width="180" height="20" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="750" y="282" text-anchor="middle" class="s muted">只用來量 agent 位置</text>
+
+  <!-- frames -->
+  <text x="20" y="320" class="s b">真實畫面</text>
+  <g>
+    <rect x="102" y="300" width="36" height="36" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <text x="120" y="352" text-anchor="middle" class="s" style="fill:#0969da">F(−5)</text>
+    <text x="120" y="366" text-anchor="middle" class="s muted">= F(0)</text>
+    <rect x="282" y="300" width="36" height="36" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <text x="300" y="352" text-anchor="middle" class="s" style="fill:#0969da">F(0)</text>
+    <rect x="462" y="300" width="36" height="36" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <text x="480" y="352" text-anchor="middle" class="s" style="fill:#0969da">F(5)</text>
+    <rect x="642" y="300" width="36" height="36" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
+    <text x="660" y="352" text-anchor="middle" class="s" style="fill:#1a7f37">F(10)</text>
+    <text x="660" y="366" text-anchor="middle" class="s muted">真實 anchor</text>
+  </g>
+
+  <!-- NanoWM box -->
+  <rect x="200" y="392" width="400" height="44" rx="6" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="400" y="411" text-anchor="middle" class="s b">NanoWM（1 round）</text>
+  <text x="400" y="427" text-anchor="middle" class="s">context F(−5), F(0), F(5)　+　動作視窗 a[−5 : 15]（20 步）</text>
+  <g stroke="#0969da" fill="none" stroke-width="1.2">
+    <path d="M120,370 L120,380 L260,380 L260,390" marker-end="url(#arr)"/>
+    <path d="M300,358 L300,390" marker-end="url(#arr)"/>
+    <path d="M480,358 L480,380 L340,380 L340,390" marker-end="url(#arr)"/>
+  </g>
+  <path d="M600,414 L700,414 L700,446" fill="none" stroke="#bc4c00" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="682" y="448" width="36" height="36" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.5"/>
+  <text x="726" y="463" class="s b" style="fill:#bc4c00">F̂(10)</text>
+  <text x="726" y="478" class="s" style="fill:#bc4c00">imagined anchor</text>
+  <path d="M660,370 L660,466 L680,466" fill="none" stroke="#6e7781" stroke-dasharray="3 3"/>
+  <text x="560" y="500" class="s muted">比較：CoG 誤差中位數 0.34 px、|coverage 差| 0.016</text>
+
+  <!-- action groups table -->
+  <text x="20" y="530" class="s b">動作視窗的 4 組（每組 5 步，第 j 組驅動「從第 j 張 frame 開始」的變化）</text>
+  <g class="s">
+    <rect x="20" y="540" width="210" height="44" fill="#eaeef2" stroke="#8c959f" stroke-dasharray="4 3"/>
+    <text x="30" y="558" class="b">組 0：原地 ×5</text><text x="30" y="575" class="muted">相對動作 = 0；F(−5) → F(0) 不變</text>
+    <rect x="235" y="540" width="210" height="44" fill="#ddf4ff" stroke="#0969da"/>
+    <text x="245" y="558" class="b" style="fill:#0969da">組 1：lead[0:5]</text><text x="245" y="575" class="muted">F(0) → F(5)</text>
+    <rect x="450" y="540" width="210" height="44" fill="#ddf4ff" stroke="#0969da"/>
+    <text x="460" y="558" class="b" style="fill:#0969da">組 2：lead[5:10]</text><text x="460" y="575" class="muted">F(5) → F̂(10)：決定生成畫面</text>
+    <rect x="665" y="540" width="215" height="44" fill="#dafbe1" stroke="#1a7f37"/>
+    <text x="675" y="558" class="b" style="fill:#1a7f37">組 3：W chunk[0:5]</text><text x="675" y="575" class="muted">lookahead（F̂(10) 之後）</text>
+  </g>
+
+  <!-- ================= C: the two arms ================= -->
+  <line x1="20" y1="604" x2="880" y2="604" stroke="#d0d7de"/>
+  <text x="20" y="632" class="h">C. 兩組訓練資料：只差 anchor 畫面</text>
+  <g class="s">
+    <rect x="20" y="648" width="420" height="72" rx="6" fill="#dafbe1" stroke="#1a7f37"/>
+    <text x="34" y="670" class="b" style="fill:#1a7f37">Real-W（沿用 last-mile 的 W，不重訓）</text>
+    <text x="34" y="690">畫面：真實 F(10)　Label：W chunk 的 9 個動作</text>
+    <text x="34" y="708" class="muted">179 個 pair × 7 份 = 1,253（約 5%）</text>
+    <rect x="460" y="648" width="420" height="72" rx="6" fill="#fff1e5" stroke="#bc4c00"/>
+    <text x="474" y="670" class="b" style="fill:#bc4c00">Img-W（新訓練）</text>
+    <text x="474" y="690">畫面：F̂(10)　Label：完全相同的 W chunk</text>
+    <text x="474" y="708" class="muted">同樣 179 × 7，同一張 F̂ 重複 7 次</text>
+  </g>
+  <text x="20" y="748" class="s">模擬器檢查（179 個全通過）：重播的 F(0)、F(5)、F(10) 與當初存的 sha1 一致；到達的 anchor 狀態與畫面與原本完全相同。</text>
+  <text x="20" y="768" class="s">例外：7 個 anchor 的 agent 一放下就碰到方塊，原地 5 步時方塊被物理引擎推動最多 0.13 px（224 影像約 0.06 px）。</text>
+  <text x="20" y="788" class="s muted">比 NanoWM 本身的誤差（約 0.34 px）小一個數量級，所以這 7 個是否保留，對結果影響很小。</text>
+</svg>

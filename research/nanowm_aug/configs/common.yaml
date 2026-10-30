@@ -152,6 +152,10 @@ seed_namespace:
   sailor_expand_screen: 790000     # sailor_expand: base-policy screening rollouts from the candidate anchors
   sailor_expand_verify: 900000     # sailor_expand: discovery continuation seeds 900000 + 2i (cont_seed + 1 = noise rng)
   sailor_expand_replicate: 910000  # sailor_expand: replication continuation seeds 910000 + 2i
+  imagined_replay_source: 920000  # imagined_replay collect_success.py: source episodes env.reset(seed=920000+i)
+  imagined_replay_branch: 930000  # imagined_replay collect_success.py: branch torch seeds 930000 + start id
   heuristic_late_states: 940000      # heuristic collect_late_states.py: source episodes env.reset(seed=940000+i) (+1 = rng)
   heuristic_lastmile_branch: 950000  # heuristic run_lastmile.sh: closed_loop_rollout --torch-seed 950000 --noise-seed 950003
   heuristic_lastmile_select: 960000  # heuristic select_lastmile.py: numpy rng of the random (R) pick
+  imagined_replay_wm: 990000      # imagined_replay replay_imagine.py: NanoWM worker --seed 990000 + 1000*part + chunk (lastmile_w_imagine.py: 990000 + 2000, an unused part)
+  imagined_replay_select: 995000  # imagined_replay pack_pairs.py: numpy rng of the per-start pair selection
