@@ -6,6 +6,12 @@
 # -> multiseed (OPTIONAL offline WM-seed spread; runs proj/pusht/method1/run_method1_multiseed.sh if it exists; never fatal).
 #   bash run_method1.sh tmux    detached (survives ssh loss); GPUS="6 7" by default
 # Resumable: finished stages leave <out>/.done/<stage>; progress in <out>/status.txt.
+# Other runs of the same design (defaults = method 1): M1_DIR (dir under lastmile/, also the tmux name), M1_TAG (repo
+# prefix), M1_ARMS, M1_N (pairs per arm), M1_EXTRA_EVAL (method-1 arms whose evals are linked in for the pooled
+# comparison), M1_POOLED_PAIRS (first pair = primary), M1_MULTISEED (0 skips the offline WM-seed check). Round 2:
+#   M1_DIR=method1_r2 M1_TAG=m1r2 M1_ARMS="img_r12 real_r12" M1_N=242 M1_EXTRA_EVAL="img_self real_self" \
+#   M1_POOLED_PAIRS="img_r12:real_r12 img_r12:img_self real_r12:real_self img_r12:ctrl real_r12:ctrl" M1_MULTISEED=0 \
+#   bash run_method1.sh tmux
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
@@ -14,12 +20,22 @@ RES=research/nanowm_aug  # the one PYTHONPATH root
 PY="uv run --extra training python"
 read -r -a GPU_LIST <<< "${GPUS:-6 7}"
 LM=$HOME/datastorage/nanowm_pusht_aug/lastmile
-O=$LM/method1
+M1_DIR=${M1_DIR:-method1}
+TAG=${M1_TAG:-m1}
+read -r -a ARMS <<< "${M1_ARMS:-img_self real_self}"
+N=${M1_N:-121}
+read -r -a EXTRA_EVAL <<< "${M1_EXTRA_EVAL:-}"
+read -r -a POOLED_PAIRS <<< "${M1_POOLED_PAIRS:-img_self:real_self img_self:ctrl real_self:ctrl}"
+MULTISEED=${M1_MULTISEED:-1}
+O=$LM/$M1_DIR
 
 if [ "${1:-}" = "tmux" ]; then
-  tmux has-session -t method1 2>/dev/null && { echo "tmux session method1 already running"; exit 1; }
-  tmux new-session -d -s method1 "GPUS='${GPU_LIST[*]}' WANDB_ENABLE='${WANDB_ENABLE:-true}' bash '$SELF' 2>&1 | tee -a '$O/run.log'"
-  echo "started tmux session method1; log $O/run.log, status $O/status.txt"
+  tmux has-session -t "$M1_DIR" 2>/dev/null && { echo "tmux session $M1_DIR already running"; exit 1; }
+  mkdir -p "$O"
+  tmux new-session -d -s "$M1_DIR" "GPUS='${GPU_LIST[*]}' WANDB_ENABLE='${WANDB_ENABLE:-true}' M1_DIR='$M1_DIR' \
+M1_TAG='$TAG' M1_ARMS='${ARMS[*]}' M1_N='$N' M1_EXTRA_EVAL='${EXTRA_EVAL[*]}' M1_POOLED_PAIRS='${POOLED_PAIRS[*]}' \
+M1_MULTISEED='$MULTISEED' bash '$SELF' 2>&1 | tee -a '$O/run.log'"
+  echo "started tmux session $M1_DIR; log $O/run.log, status $O/status.txt"
   exit 0
 fi
 
@@ -29,35 +45,37 @@ FINISHED=0
 trap '[ "$FINISHED" = 1 ] || status "FAIL driver exited unexpectedly (code $?); re-run to resume"' EXIT
 trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
 
-ARMS=(img_self real_self)
-UNITS=("img_self 1000" "real_self 1000" "img_self 1001" "real_self 1001")
-repo_of() { echo "local/pusht_m1_$1_plus_real"; }
-ckpt_of() { printf '%s/pusht_m1_%s_plus_real_d8_s%s/checkpoints/020000/pretrained_model' "$O/train" "$1" "$2"; }
+UNITS=()
+for s in 1000 1001; do for a in "${ARMS[@]}"; do UNITS+=("$a $s"); done; done
+repo_of() { echo "local/pusht_${TAG}_$1_plus_real"; }
+ckpt_of() { printf '%s/pusht_%s_%s_plus_real_d8_s%s/checkpoints/020000/pretrained_model' "$O/train" "$TAG" "$1" "$2"; }
 
 st_pack() {
   local arm n
   for arm in "${ARMS[@]}"; do
-    $PY $RES/nwaug/datagen/pack_closed_loop.py --accepted "$O/pairs_$arm" --repo-id "local/pusht_m1_$arm" \
+    $PY $RES/nwaug/datagen/pack_closed_loop.py --accepted "$O/pairs_$arm" --repo-id "local/pusht_${TAG}_$arm" \
       --ep-len 9 --pair-cov 0.0 --include-anchor --overwrite || return 1
     n=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1]))['pairs']; assert all(p['j']==-1 for p in d); print(len(d))" \
-      "$HOME/.cache/huggingface/lerobot/local/pusht_m1_$arm/meta/pair_index.json") || return 1
-    [ "$n" = 121 ] || { echo "$arm packed $n pairs, expected 121"; return 1; }
+      "$HOME/.cache/huggingface/lerobot/local/pusht_${TAG}_$arm/meta/pair_index.json") || return 1
+    [ "$n" = "$N" ] || { echo "$arm packed $n pairs, expected $N"; return 1; }
   done
 }
 st_build() {
-  $PY - "local/pusht_imgonly" "local/pusht_m1_img_self" "local/pusht_m1_real_self" <<'EOF'
+  local pools=() arm
+  for arm in "${ARMS[@]}"; do pools+=("local/pusht_${TAG}_$arm"); done
+  $PY - "$N" "local/pusht_imgonly" "${pools[@]}" <<'EOF'
 import json, sys
 sys.path.insert(0, "research/nanowm_aug")
 from nwaug.attribution.build_selected_datasets import build_real_plus_pairs
 from lerobot.utils.constants import HF_LEROBOT_HOME
-real, pools = sys.argv[1], sys.argv[2:]
+n_expect, real, pools = int(sys.argv[1]), sys.argv[2], sys.argv[3:]
 stats = json.loads((HF_LEROBOT_HOME / real / "meta/stats.json").read_text())
 n = {}
 for pool in pools:
     n_pool = json.loads((HF_LEROBOT_HOME / pool / "meta/info.json").read_text())["total_episodes"]
     n[pool] = (n_pool, build_real_plus_pairs(real, pool, list(range(n_pool)), f"{pool}_plus_real", stats))
     print(pool, n[pool])
-assert {v[0] for v in n.values()} == {121}, n
+assert {v[0] for v in n.values()} == {n_expect}, n
 EOF
 }
 ft_unit() {  # <arm> <seed> <gpu>
@@ -96,11 +114,16 @@ st_eval() {
   mkdir -p "$O/eval"
   [ -e "$O/eval/ctrl_s1000" ] || ln -s "$(readlink -f "$LM/eval/ctrl")" "$O/eval/ctrl_s1000"
   [ -e "$O/eval/ctrl_s1001" ] || ln -s "$(readlink -f "$LM/eval_seeds/ctrl_s1001")" "$O/eval/ctrl_s1001"
+  local a s
+  for a in "${EXTRA_EVAL[@]}"; do for s in 1000 1001; do
+    [ -f "$LM/method1/eval/${a}_s$s/success_steps.npz" ] || { echo "missing method-1 eval ${a}_s$s"; return 1; }
+    [ -e "$O/eval/${a}_s$s" ] || ln -s "$(readlink -f "$LM/method1/eval/${a}_s$s")" "$O/eval/${a}_s$s"
+  done; done
   in_pairs ev_unit ev
 }
 st_pooled() {
-  $PY $RES/proj/pusht/heuristic/lastmile_pooled.py "$O/eval" --arms img_self real_self ctrl --seeds 1000 1001 \
-    --pairs img_self:real_self img_self:ctrl real_self:ctrl --margin 0.02
+  $PY $RES/proj/pusht/heuristic/lastmile_pooled.py "$O/eval" --arms "${ARMS[@]}" "${EXTRA_EVAL[@]}" ctrl \
+    --seeds 1000 1001 --pairs "${POOLED_PAIRS[@]}" --margin 0.02
 }
 st_multiseed() {  # optional offline measurement; a failure is logged, never blocks the main result
   local s=$RES/proj/pusht/method1/run_method1_multiseed.sh
@@ -109,7 +132,7 @@ st_multiseed() {  # optional offline measurement; a failure is logged, never blo
   return 0
 }
 
-status "START method1 gpus=${GPU_LIST[*]}"
+status "START $M1_DIR gpus=${GPU_LIST[*]} arms=${ARMS[*]} n=$N"
 for s in pack build finetune eval pooled; do
   [ -f "$O/.done/$s" ] && { status "skip $s (done)"; continue; }
   status "begin $s"
@@ -117,6 +140,6 @@ for s in pack build finetune eval pooled; do
   else status "FAIL $s; re-run to resume"; FINISHED=1; exit 1; fi
 done
 status "MAIN DONE"
-if [ ! -f "$O/.done/multiseed" ]; then status "begin multiseed"; st_multiseed; touch "$O/.done/multiseed"; status "done multiseed"; fi
+if [ "$MULTISEED" = 1 ] && [ ! -f "$O/.done/multiseed" ]; then status "begin multiseed"; st_multiseed; touch "$O/.done/multiseed"; status "done multiseed"; fi
 FINISHED=1
 status "ALL DONE"

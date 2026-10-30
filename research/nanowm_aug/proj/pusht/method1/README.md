@@ -24,7 +24,7 @@ It is in `~/datastorage/nanowm_pusht_aug/lastmile/method1/criteria.md`.
 2. Realize the branches.
    Replay each picked branch in the simulator.
    Capture the real frame at the step where NanoWM predicted each imagined frame.
-3. Label with the base policy.
+3. Label action chunk with the base policy.
    The base policy samples a 16-step chunk on each frame.
    The imagined frame and the real frame use the same random seed (common random numbers).
    This gives the pair sets `img_self` and `real_self`.
@@ -70,6 +70,32 @@ Run all commands from the repository root.
 3. The driver runs the offline NanoWM-seed check last.
    A failure of this check never stops the main result.
    To run it alone, use `run_method1_multiseed.sh`.
+
+## Round 2
+
+Round 2 asks a follow-up question.
+What happens when NanoWM imagines one more round, and the imagined data doubles?
+
+- Each picked branch already holds a second frame at step 10, imagined and real.
+  Nothing is re-imagined or re-realized.
+- `img_r12` and `real_r12` each have 242 pairs.
+  The first 121 are the method 1 pairs (symlinks, same labels).
+  The other 121 are new pairs on the round-2 frame, labeled in the same way.
+- The dose is about 1.0% of sampleable frames.
+- The primary test is the same: `img_r12 - real_r12`, margin 0.02.
+  The pooled comparison also links in the method 1 evaluations, to compare `r12` against `self` (round 1 only).
+- The criterion is in `~/datastorage/nanowm_pusht_aug/lastmile/method1_r2/criteria.md`.
+  All outputs go to the same directory.
+
+```bash
+uv run --extra training python research/nanowm_aug/proj/pusht/method1/method1_prep.py label_r2 \
+    --out ~/datastorage/nanowm_pusht_aug/lastmile/method1_r2 --ckpt <base>
+M1_DIR=method1_r2 M1_TAG=m1r2 M1_ARMS="img_r12 real_r12" M1_N=242 M1_EXTRA_EVAL="img_self real_self" \
+    M1_POOLED_PAIRS="img_r12:real_r12 img_r12:img_self real_r12:real_self img_r12:ctrl real_r12:ctrl" \
+    M1_MULTISEED=0 GPUS="6 7" bash research/nanowm_aug/proj/pusht/method1/run_method1.sh tmux
+```
+
+`offline.json` reports the action gap, coverage and block CoG error for each round.
 
 ## Outputs
 
